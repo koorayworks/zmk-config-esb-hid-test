@@ -34,7 +34,7 @@ RX のキー1はダミー（レシーバーにマトリクスが要るための�
 
     ./build-local.sh
 
-成果物: `build/tx/zephyr/zmk.uf2` と `build/rx/zephyr/zmk.uf2`。
+成果物: `firmware/esb_tx.uf2` と `firmware/esb_rx.uf2`（スクリプトが `firmware/` に集約する）。
 それぞれを XIAO に書き込み、RX 側を PC に USB 接続すれば、
 TX のキーを押した入力が PC に届くはず。
 

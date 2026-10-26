@@ -18,5 +18,9 @@ west build -p -s "$ZMK_APP" -b "$BOARD" -d build/tx -- \
 west build -p -s "$ZMK_APP" -b "$BOARD" -d build/rx -- \
   -DSHIELD=esb_test_rx -DZMK_CONFIG="$PWD/config"
 
-echo "TX: build/tx/zephyr/zmk.uf2"
-echo "RX: build/rx/zephyr/zmk.uf2"
+mkdir -p firmware
+cp build/tx/zephyr/zmk.uf2 firmware/esb_tx.uf2
+cp build/rx/zephyr/zmk.uf2 firmware/esb_rx.uf2
+
+echo "TX: firmware/esb_tx.uf2"
+echo "RX: firmware/esb_rx.uf2"
