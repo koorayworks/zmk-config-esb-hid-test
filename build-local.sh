@@ -21,7 +21,10 @@ west build -p -s "$ZMK_APP" -b "$BOARD" -d build/rx -- \
 west build -p -s "$ZMK_APP" -b "$BOARD" -d build/nickey-tx -- \
   -DSHIELD=esb_nickey_tx -DZMK_CONFIG="$PWD/config"
 
-west build -p -s "$ZMK_APP" -b "$BOARD" -d build/tentalice-tx -- \
+# TentAlice uses the xiao_ble//zmk board extension (like the original
+# zmk-config-tentalice build.yaml): it wires up UF2 boot-mode via
+# GPREGRET retention, without which &bootloader only resets.
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/tentalice-tx -- \
   -DSHIELD=esb_tentalice_tx -DZMK_CONFIG="$PWD/config"
 
 mkdir -p firmware
