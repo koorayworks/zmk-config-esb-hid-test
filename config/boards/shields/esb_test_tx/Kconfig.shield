@@ -1,0 +1,2 @@
+config SHIELD_ESB_TEST_TX
+	def_bool $(shields_list_contains,esb_test_tx)

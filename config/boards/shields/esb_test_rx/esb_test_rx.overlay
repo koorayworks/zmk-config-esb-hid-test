@@ -1,0 +1,13 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	chosen {
+		zmk,kscan = &kscan;
+	};
+
+	kscan: kscan {
+		compatible = "zmk,kscan-gpio-direct";
+		input-gpios =
+			<&gpio0 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+	};
+};
