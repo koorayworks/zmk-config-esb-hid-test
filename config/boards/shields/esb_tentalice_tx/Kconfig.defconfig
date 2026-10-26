@@ -1,0 +1,6 @@
+if SHIELD_ESB_TENTALICE_TX
+
+config ZMK_KEYBOARD_NAME
+	default "ESB Tentalice TX"
+
+endif

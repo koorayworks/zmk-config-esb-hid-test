@@ -1,0 +1,2 @@
+config SHIELD_ESB_TENTALICE_TX
+	def_bool $(shields_list_contains,esb_tentalice_tx)
