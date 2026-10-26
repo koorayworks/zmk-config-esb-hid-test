@@ -1,0 +1,51 @@
+/*
+ * Left half (22 keys) of the Nickey keymap, ported from
+ * zmk-config-nickey (config/nickey.keymap, branch DYA-Studio-v2).
+ *
+ * Simplifications for this ESB test config:
+ * - The BT layer (layer 3) is omitted; the &mo 3 on the Number
+ *   layer's inner key is &trans here.
+ * - &jp_hanzen / &jp_at come from a jpkeys behavior file that is
+ *   not part of this config; substituted with GRAVE / LS(NUMBER_2).
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+
+        default_layer {
+            display-name = "Base";
+            bindings = <
+                &kp TAB    &kp Q  &kp W  &kp E  &kp R  &kp T
+                &kp LCTRL  &kp A  &kp S  &kp D  &kp F  &kp G
+                &kp LSHFT  &kp Z  &kp X  &kp C  &kp V  &kp B  &kp GRAVE
+                                        &kp LGUI  &mo 2  &lt 1 SPACE
+            >;
+        };
+
+        layer_1 {
+            display-name = "Number";
+            bindings = <
+                &kp ESCAPE  &kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp NUMBER_4  &kp NUMBER_5
+                &trans      &kp F1        &kp F2        &kp F3        &kp F4        &kp F5
+                &trans      &kp F6        &kp F7        &kp F8        &kp F9        &kp F10      &trans
+                                                            &trans  &trans  &trans
+            >;
+        };
+
+        layer_2 {
+            display-name = "Alpha";
+            bindings = <
+                &trans  &kp LS(NUMBER_1)  &kp LS(NUMBER_2)  &kp LS(NUMBER_3)  &kp LS(NUMBER_4)  &kp LS(NUMBER_5)
+                &trans  &kp AT            &kp HASH          &kp DOLLAR       &trans            &trans
+                &trans  &trans            &kp ASTRK         &kp CARET        &trans            &trans          &trans
+                                                                                    &trans  &trans  &trans
+            >;
+        };
+    };
+};
