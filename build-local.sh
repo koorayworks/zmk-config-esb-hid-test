@@ -9,8 +9,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-BOARD="${BOARD:-seeeduino_xiao_ble}"
-ZMK_APP="${ZMK_APP:-$PWD/../zmk/app}"
+BOARD="${BOARD:-xiao_ble/nrf52840}"
+ZMK_APP="${ZMK_APP:-$PWD/zmk/app}"
 
 west build -p -s "$ZMK_APP" -b "$BOARD" -d build/tx -- \
   -DSHIELD=esb_test_tx -DZMK_CONFIG="$PWD/config"
