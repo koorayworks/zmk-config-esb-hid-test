@@ -176,7 +176,13 @@ display_spi: &spi3 {
 	chosen {
 		zmk,kscan = &kscan;
 		zephyr,display = &st7789v;
-		zephyr,lvgl-pointer-input = &cst816s;
+	};
+
+	/* LVGL pointer input: routes CST816S touch events into LVGL.
+	 * (Zephyr 4.1 mechanism: a dedicated node, not a chosen entry.) */
+	lvgl_pointer_input {
+		compatible = "zephyr,lvgl-pointer-input";
+		input = <&cst816s>;
 	};
 
 	pwmleds {
