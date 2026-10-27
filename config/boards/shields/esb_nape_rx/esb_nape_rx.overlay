@@ -1,0 +1,202 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/*
+ * Nape (ESB receiver + display + touch + local trackball)
+ *
+ * Pin map (decided 2026-10-27):
+ *   Display ST7789V, dedicated SPI3: SCK=D1(P0.03) MOSI=D3(P0.29)
+ *                                    CS=D2(P0.28)  DC=D7(P1.12)
+ *                                    BL=P0.16 (PWM, hidden pad)
+ *   Trackball PAW3222 (TANBOKU), dedicated SPI1:
+ *                                    SCK=D8(P1.13) SDIO=D10(P1.15)
+ *                                    CS=D9(P1.14)  MOTION=D0(P0.02)
+ *   Touch CST816S, I2C0 on hidden pads: SDA=P1.00 SCL=P1.10, polling
+ *   Keys x3 (direct GPIO): D4(P0.04) D5(P0.05) D6(P1.11)
+ */
+
+/* D6/D7 are used for a key and the display DC line. */
+&xiao_serial {
+	status = "disabled";
+};
+
+/* Instance 1 is used by the trackball SPIM; the board's TWIM1 must go. */
+&i2c1 {
+	status = "disabled";
+};
+
+&pinctrl {
+	spi3_disp_default: spi3_disp_default {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 29)>;
+		};
+	};
+
+	spi3_disp_sleep: spi3_disp_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
+				<NRF_PSEL(SPIM_MOSI, 0, 29)>;
+			low-power-enable;
+		};
+	};
+
+	spi1_tb_default: spi1_tb_default {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+				<NRF_PSEL(SPIM_MOSI, 1, 15)>,
+				<NRF_PSEL(SPIM_MISO, 1, 15)>;
+		};
+	};
+
+	spi1_tb_sleep: spi1_tb_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+				<NRF_PSEL(SPIM_MOSI, 1, 15)>,
+				<NRF_PSEL(SPIM_MISO, 1, 15)>;
+			low-power-enable;
+		};
+	};
+
+	i2c0_touch_default: i2c0_touch_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 1, 0)>,
+				<NRF_PSEL(TWIM_SCL, 1, 10)>;
+			bias-pull-up;
+		};
+	};
+
+	i2c0_touch_sleep: i2c0_touch_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 1, 0)>,
+				<NRF_PSEL(TWIM_SCL, 1, 10)>;
+			low-power-enable;
+		};
+	};
+
+	pwm0_bl_default: pwm0_bl_default {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 16)>;
+		};
+	};
+
+	pwm0_bl_sleep: pwm0_bl_sleep {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 0, 16)>;
+			low-power-enable;
+		};
+	};
+};
+
+/* ---- Display: ST7789V 240x280 on SPI3 (values mirror the proven
+ *      Prospector adapter settings for the Waveshare 1.69" panel) ---- */
+display_spi: &spi3 {
+	status = "okay";
+	pinctrl-0 = <&spi3_disp_default>;
+	pinctrl-1 = <&spi3_disp_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;
+
+	mipi_dbi {
+		compatible = "zephyr,mipi-dbi-spi";
+		spi-dev = <&spi3>;
+		dc-gpios = <&gpio1 12 GPIO_ACTIVE_HIGH>;
+		write-only;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		st7789v: st7789v@0 {
+			compatible = "sitronix,st7789v";
+			mipi-max-frequency = <30000000>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+			reg = <0>;
+			width = <240>;
+			height = <280>;
+			x-offset = <0>;
+			y-offset = <20>;
+			vcom = <0x19>;
+			gctrl = <0x35>;
+			vrhs = <0x12>;
+			vdvs = <0x20>;
+			mdac = <0x00>;
+			gamma = <0x01>;
+			colmod = <0x05>;
+			lcm = <0x2c>;
+			porch-param = [ 0c 0c 00 33 33 ];
+			cmd2en-param = [ 5a 69 02 01 ];
+			pwctrl1-param = [ a4 a1 ];
+			pvgam-param = [ d0 04 0d 11 13 2b 3f 54 4c 18 0d 0b 1f 23 ];
+			nvgam-param = [ d0 04 0c 11 13 2c 3f 44 51 2f 1f 1f 20 23 ];
+			ram-param = [ 00 f0 ];
+			rgb-param = [ cd 08 14 ];
+		};
+	};
+};
+
+/* Backlight PWM on P0.16 (hidden pad). */
+&pwm0 {
+	status = "okay";
+	pinctrl-0 = <&pwm0_bl_default>;
+	pinctrl-1 = <&pwm0_bl_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* ---- Trackball: PAW3222 (TANBOKU) on SPI1 ---- */
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_tb_default>;
+	pinctrl-1 = <&spi1_tb_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio1 14 GPIO_ACTIVE_LOW>;
+
+	paw3222: paw3222@0 {
+		compatible = "pixart,paw3222";
+		reg = <0>;
+		spi-max-frequency = <2000000>;
+		irq-gpios = <&gpio0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		res-cpi = <800>;
+	};
+};
+
+/* ---- Touch: CST816S on I2C0 (hidden pads P1.00/P1.10, polled) ---- */
+&i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0_touch_default>;
+	pinctrl-1 = <&i2c0_touch_sleep>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <400000>;
+
+	cst816s: cst816s@15 {
+		compatible = "hynitron,cst816s";
+		reg = <0x15>;
+	};
+};
+
+/ {
+	chosen {
+		zmk,kscan = &kscan;
+		zephyr,display = &st7789v;
+		zephyr,lvgl-pointer-input = &cst816s;
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		disp_bl: pwm_led_0 {
+			pwms = <&pwm0 0 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+			label = "Display backlight";
+		};
+	};
+
+	kscan: kscan {
+		compatible = "zmk,kscan-gpio-direct";
+		input-gpios =
+			<&gpio0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio1 11 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+	};
+
+	trackball_listener {
+		compatible = "zmk,input-listener";
+		device = <&paw3222>;
+	};
+};

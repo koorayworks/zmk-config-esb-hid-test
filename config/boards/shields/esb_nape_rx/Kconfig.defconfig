@@ -1,0 +1,6 @@
+if SHIELD_ESB_NAPE_RX
+
+config ZMK_KEYBOARD_NAME
+	default "Nape"
+
+endif

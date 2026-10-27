@@ -10,5 +10,8 @@ manifest:
     - name: zmk-feature-esb-hid
       remote: vwbugowner1976
       revision: main
+    - name: zmk-driver-paw3222
+      remote: vwbugowner1976
+      revision: zmk-0.4
   self:
     path: config
