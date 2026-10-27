@@ -11,3 +11,11 @@
 			<&gpio0 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 	};
 };
+
+/* Second USB CDC ACM port, used as the ZMK Studio endpoint for the
+ * Studio over ESB forwarder (the first CDC port is the log console). */
+&zephyr_udc0 {
+	esb_studio_cdc: esb_studio_cdc {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
