@@ -130,7 +130,7 @@ lv_obj_t *zmk_display_status_screen() {
 
     /* Top row: brand / own battery / link state. */
     lv_obj_t *brand = make_label(stage, &lv_font_montserrat_12, COL_MUTE, 16, 10);
-    lv_label_set_text(brand, "NAPE");
+    lv_label_set_text(brand, "NAPE DECK");
     lv_obj_set_style_text_letter_space(brand, 3, LV_PART_MAIN);
 
     own_batt_label = make_label(stage, &lv_font_montserrat_12, COL_SUB, 150, 10);
