@@ -27,13 +27,20 @@ west build -p -s "$ZMK_APP" -b "$BOARD" -d build/nickey-tx -- \
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/tentalice-tx -- \
   -DSHIELD=esb_tentalice_tx -DZMK_CONFIG="$PWD/config"
 
+# Nape receiver: ESB RX + ST7789V display + CST816S touch + PAW3222.
+# Needs the xiao_ble//zmk variant (battery readout) like TentAlice.
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-rx -- \
+  -DSHIELD=esb_nape_rx -DZMK_CONFIG="$PWD/config"
+
 mkdir -p firmware
 cp build/tx/zephyr/zmk.uf2 firmware/esb_tx.uf2
 cp build/rx/zephyr/zmk.uf2 firmware/esb_rx.uf2
 cp build/nickey-tx/zephyr/zmk.uf2 firmware/esb_nickey_tx.uf2
 cp build/tentalice-tx/zephyr/zmk.uf2 firmware/esb_tentalice_tx.uf2
+cp build/nape-rx/zephyr/zmk.uf2 firmware/esb_nape_rx.uf2
 
 echo "TX: firmware/esb_tx.uf2"
 echo "RX: firmware/esb_rx.uf2"
 echo "Nickey TX: firmware/esb_nickey_tx.uf2"
 echo "Tentalice TX: firmware/esb_tentalice_tx.uf2"
+echo "Nape RX: firmware/esb_nape_rx.uf2"
