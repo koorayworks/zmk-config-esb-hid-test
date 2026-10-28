@@ -10,8 +10,10 @@
  *   mode on layers 1/2.
  * - The RGB layer/mod indicator hold-taps (rlt and rmt families)
  *   are replaced by plain &lt / &mt with the same parameters.
- * - &mouse_gesture (layer 4) is &trans; layer 5's &out / &bt
- *   entries are &trans (this build has no USB/BLE endpoints).
+ * - &mouse_gesture (layer 4) is &trans; layer 5's &bt entries are
+ *   &trans (this build has no BLE endpoints). The original's first
+ *   &out position (layer 5 row 1, &out OUT_BLE) now holds
+ *   &out OUT_TOG, which cycles USB <-> ESB in this dual-mode build.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -21,6 +23,7 @@
 #include <dt-bindings/zmk/input_transform.h>
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/outputs.h>
 #include <dt-bindings/zmk/pointing.h>
 #include <dt-bindings/zmk/rgb.h>
 
@@ -312,7 +315,7 @@
 
         layer_5 {
             bindings = <
-                &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
+                &out OUT_TOG  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &bootloader   &trans        &trans        &bootloader   &trans
