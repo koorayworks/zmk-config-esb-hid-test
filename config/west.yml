@@ -9,7 +9,7 @@ manifest:
       import: app/west.yml
     - name: zmk-feature-esb-hid
       remote: vwbugowner1976
-      revision: main
+      revision: feat/studio-over-esb
     - name: zmk-driver-paw3222
       remote: vwbugowner1976
       revision: zmk-0.4
