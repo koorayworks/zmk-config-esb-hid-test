@@ -34,6 +34,7 @@ static const uint32_t layer_colors[] = {
 #define LAYER_COUNT (sizeof(layer_colors) / sizeof(layer_colors[0]))
 
 static lv_obj_t *link_dot;
+static lv_obj_t *link_label;
 static lv_obj_t *own_batt_label;
 static lv_obj_t *kb_name_label;
 static lv_obj_t *layer_label;
@@ -75,6 +76,8 @@ static void refresh_cb(lv_timer_t *timer) {
     lv_label_set_text_fmt(own_batt_label, "%d%%", own);
 
     if (!linked) {
+        lv_label_set_text(link_label, "ESB");
+        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
         lv_label_set_text(kb_name_label, "NO LINK");
         lv_label_set_text(layer_label, "");
         lv_label_set_text(batt_pct_label, "");
@@ -89,6 +92,39 @@ static void refresh_cb(lv_timer_t *timer) {
     }
 
     lv_label_set_text(kb_name_label, "KEYBOARD");
+
+    /* Output-mode indication. Amber stays reserved for "the ESB link
+     * is carrying the keyboard's output" (link dot + list-row ring).
+     * When the keyboard sends its HID output over USB/BLE instead, the
+     * status frames still arrive over ESB, so layer/battery keep
+     * updating, but the markers drop to gray and the label names the
+     * active output. */
+    bool via_esb = st.output == ESB_HID_STATUS_OUTPUT_ESB;
+    lv_obj_set_style_bg_color(link_dot, lv_color_hex(via_esb ? COL_AMBER : COL_SUB),
+                              LV_PART_MAIN);
+    lv_obj_set_style_border_color(row_radio,
+                                  lv_color_hex(via_esb ? COL_AMBER : COL_MUTE), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(row_radio, lv_color_hex(via_esb ? COL_AMBER : COL_DOT_OFF),
+                              LV_PART_MAIN);
+    switch (st.output) {
+    case ESB_HID_STATUS_OUTPUT_USB:
+        lv_label_set_text(link_label, "USB");
+        lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
+        break;
+    case ESB_HID_STATUS_OUTPUT_BLE:
+        lv_label_set_text(link_label, "BLE");
+        lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
+        break;
+    case ESB_HID_STATUS_OUTPUT_NONE:
+        lv_label_set_text(link_label, "NONE");
+        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        break;
+    default: /* ESB_HID_STATUS_OUTPUT_ESB */
+        lv_label_set_text(link_label, "ESB");
+        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+        break;
+    }
+
     uint8_t layer = st.layer < LAYER_COUNT ? st.layer : 0;
     uint32_t lcol = layer_colors[layer];
     lv_label_set_text_fmt(layer_label, "LAYER %d", st.layer);
@@ -137,8 +173,8 @@ lv_obj_t *zmk_display_status_screen() {
     lv_label_set_text(own_batt_label, "--%");
 
     link_dot = make_dot(stage, 196, 13, 6, COL_DOT_OFF);
-    lv_obj_t *esb = make_label(stage, &lv_font_montserrat_12, COL_SUB, 206, 10);
-    lv_label_set_text(esb, "ESB");
+    link_label = make_label(stage, &lv_font_montserrat_12, COL_SUB, 206, 10);
+    lv_label_set_text(link_label, "ESB");
 
     /* Hero: keyboard name + layer. */
     kb_name_label = make_label(stage, &lv_font_montserrat_28, 0xFFFFFF, 16, 34);
