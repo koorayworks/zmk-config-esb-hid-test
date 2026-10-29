@@ -22,6 +22,15 @@
 #define COL_AMBER 0xFFB340
 #define COL_ALERT 0xFF453A
 
+/* Top-right link indicator positions. The wider "NO LINK" text of
+ * the link-lost state would run off the 240 px stage at the normal
+ * position, so in that state dot + label shift left together (and
+ * shift back when the link returns). Nothing else moves. */
+#define LINK_DOT_X 196
+#define LINK_LABEL_X 206
+#define LINK_DOT_X_LOST 180
+#define LINK_LABEL_X_LOST 190
+
 /* Per-layer colors (TentAlice RGB indicator assignment). */
 static const uint32_t layer_colors[] = {
     0xFFFFFF, /* L0 base: white */
@@ -68,12 +77,19 @@ static lv_obj_t *make_dot(lv_obj_t *parent, int x, int y, int size, uint32_t col
 static void refresh_cb(lv_timer_t *timer) {
     struct esb_hid_device_status st;
     bool linked = esb_hid_get_device_status(0, &st) && st.valid;
+    /* A keyboard that was seen before but has sent no frame of any
+     * type for longer than the timeout is gone: keep showing its
+     * last known state, greyed out (below), instead of presenting
+     * it as live. */
+    bool link_lost = linked && (k_uptime_get() - st.last_seen_ms > ESB_HID_LINK_LOST_TIMEOUT_MS);
 
     lv_obj_set_style_bg_color(link_dot, lv_color_hex(linked ? COL_AMBER : COL_DOT_OFF),
                               LV_PART_MAIN);
 
     uint8_t own = zmk_battery_state_of_charge();
     lv_label_set_text_fmt(own_batt_label, "%d%%", own);
+    lv_obj_set_style_text_color(own_batt_label, lv_color_hex(link_lost ? COL_MUTE : COL_SUB),
+                                LV_PART_MAIN);
 
     if (!linked) {
         lv_label_set_text(link_label, "ESB");
@@ -90,6 +106,52 @@ static void refresh_cb(lv_timer_t *timer) {
         }
         return;
     }
+
+    if (link_lost) {
+        /* Last known state, all in muted greys; only the link area
+         * changes its label. */
+        lv_obj_set_pos(link_dot, LINK_DOT_X_LOST, 13);
+        lv_obj_set_pos(link_label, LINK_LABEL_X_LOST, 10);
+        lv_obj_set_style_bg_color(link_dot, lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+        lv_label_set_text(link_label, "NO LINK");
+        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+
+        lv_label_set_text(kb_name_label, "KEYBOARD");
+        lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+
+        lv_label_set_text_fmt(layer_label, "LAYER %d", st.layer);
+        lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        for (int i = 0; i < LAYER_COUNT; i++) {
+            lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+        }
+
+        lv_obj_set_style_text_color(batt_pct_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        if (st.battery == 0xFF) {
+            lv_label_set_text(batt_pct_label, "--%");
+            lv_obj_set_width(batt_gauge_fg, 0);
+            lv_label_set_text(row_pct_label, "--%");
+        } else {
+            lv_label_set_text_fmt(batt_pct_label, "%d%%", st.battery);
+            lv_obj_set_width(batt_gauge_fg, 208 * st.battery / 100);
+            lv_obj_set_style_bg_color(batt_gauge_fg, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+            lv_label_set_text_fmt(row_pct_label, "%d%%", st.battery);
+        }
+
+        lv_obj_set_style_border_color(row_radio, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(row_radio, lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+        lv_label_set_text(row_name_label, "KEYBOARD");
+        lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        return;
+    }
+
+    /* Link alive: undo any link-lost styling before the normal
+     * rendering below. */
+    lv_obj_set_pos(link_dot, LINK_DOT_X, 13);
+    lv_obj_set_pos(link_label, LINK_LABEL_X, 10);
+    lv_obj_set_style_text_color(kb_name_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(batt_pct_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
 
     lv_label_set_text(kb_name_label, "KEYBOARD");
 
@@ -172,8 +234,8 @@ lv_obj_t *zmk_display_status_screen() {
     own_batt_label = make_label(stage, &lv_font_montserrat_12, COL_SUB, 150, 10);
     lv_label_set_text(own_batt_label, "--%");
 
-    link_dot = make_dot(stage, 196, 13, 6, COL_DOT_OFF);
-    link_label = make_label(stage, &lv_font_montserrat_12, COL_SUB, 206, 10);
+    link_dot = make_dot(stage, LINK_DOT_X, 13, 6, COL_DOT_OFF);
+    link_label = make_label(stage, &lv_font_montserrat_12, COL_SUB, LINK_LABEL_X, 10);
     lv_label_set_text(link_label, "ESB");
 
     /* Hero: keyboard name + layer. */
