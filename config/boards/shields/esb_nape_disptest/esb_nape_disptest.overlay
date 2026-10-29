@@ -56,6 +56,15 @@
 	};
 };
 
+/* ---- Display SPI clock bisect: the panel lights but shows only
+ *      static vertical-stripe garbage (the ST7789's uninitialized
+ *      GRAM pattern), so init/frame writes are not landing cleanly.
+ *      Drop the clock from the base shield's 30 MHz to 8 MHz to test
+ *      whether the Scanner harness is the limit. ---- */
+&st7789v {
+	mipi-max-frequency = <8000000>;
+};
+
 /* ---- Backlight: PWM0/P0.16 -> PWM1 ch0 on D6(P1.11), inverted.
  *      The pwm-leds node label (disp_bl) is unchanged, so the
  *      activity-linked dimming in esb_nape_rx/src/brightness.c keeps
