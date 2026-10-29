@@ -151,3 +151,23 @@
 &paw3222 {
 	irq-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 };
+
+/* ---- Local keys: PARKED (display-only test unit).
+ *      No physical keys are connected, so the base shield's kscan
+ *      inputs (D4/D5/D6) float with pull-ups. D6 (P1.11) is worse:
+ *      in this variant it is also the backlight PWM output, and
+ *      key 3 is bound to &mkp MCLK — the contested, toggling line
+ *      produced phantom middle clicks on the host. Park all three
+ *      kscan inputs on GPIOs that are not broken out on the XIAO
+ *      and claimed by nothing else in this build (verified in the
+ *      generated devicetree), so they can never generate key
+ *      events in the display-test build: P1.02, P1.03, P1.04.
+ *      (P0.30 is the XIAO's onboard green LED and P0.31 is already
+ *      the parked PAW3222 irq line, so neither qualifies.)
+ *      The production esb_nape_rx keymap/kscan are untouched. ---- */
+&kscan {
+	input-gpios =
+		<&gpio1 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+		<&gpio1 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+};
