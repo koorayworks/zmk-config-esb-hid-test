@@ -65,6 +65,21 @@
 	mipi-max-frequency = <8000000>;
 };
 
+/* ---- Disable the XIAO board's default SPI bus (spi2 / xiao_spi).
+ *      The Zephyr xiao_ble board definition enables spi2 with pinctrl
+ *      claiming SPIM_SCK=P1.13, SPIM_MOSI=P1.15, SPIM_MISO=P1.14 —
+ *      exactly this build's display SCK/MOSI pins and the display CS
+ *      pin (P1.14, a cs-gpios GPIO on spi3). Zephyr pinctrl has no
+ *      arbitration between peripherals: spi2's init (or its pinctrl
+ *      sleep state) rewires those pins to the idle SPIM2, so the panel
+ *      never latches a single command and stays on its power-on GRAM
+ *      garbage. The bus has no devices here; switch it off.
+ *      (The onboard QSPI flash is NOT involved: qspi_default uses
+ *      P0.20-P0.25.) ---- */
+&spi2 {
+	status = "disabled";
+};
+
 /* ---- Backlight: PWM0/P0.16 -> PWM1 ch0 on D6(P1.11), inverted.
  *      The pwm-leds node label (disp_bl) is unchanged, so the
  *      activity-linked dimming in esb_nape_rx/src/brightness.c keeps
