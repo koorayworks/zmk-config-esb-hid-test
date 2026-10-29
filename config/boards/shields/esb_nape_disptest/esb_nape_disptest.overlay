@@ -121,8 +121,11 @@
  *      SDIO=D10, CS=D9, MOTION=D0) collide with the Prospector display
  *      wiring above, so park the bus/lines on pins that are
  *      unconnected in the display-only wiring:
- *        SCK=D1(P0.03) SDIO=D2(P0.28) CS=D4(P0.04) MOTION=D5(P0.05)
- *      (D4/D5 double as key inputs in the full build; harmless here.)
+ *        SCK=D1(P0.03) SDIO=D2(P0.28) CS=D0(P0.02) MOTION=P0.31
+ *      CS/MOTION must stay off D4/D5 (the earlier dummy choice):
+ *      those are kscan key inputs. P0.31 is a real nRF52840 GPIO
+ *      that is not broken out on the XIAO, so the irq line is
+ *      guaranteed unconnected.
  *      The node stays enabled on purpose — see header comment. ---- */
 &spi1_tb_default {
 	group1 {
@@ -142,9 +145,9 @@
 };
 
 &spi1 {
-	cs-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+	cs-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
 };
 
 &paw3222 {
-	irq-gpios = <&gpio0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	irq-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 };

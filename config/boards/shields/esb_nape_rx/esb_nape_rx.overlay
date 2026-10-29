@@ -206,3 +206,11 @@ display_spi: &spi3 {
 		device = <&paw3222>;
 	};
 };
+
+/* Second USB CDC ACM port for the Studio over ESB forwarder
+ * (same setup as esb_test_rx; first CDC port is the log console). */
+&zephyr_udc0 {
+	esb_studio_cdc: esb_studio_cdc {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
