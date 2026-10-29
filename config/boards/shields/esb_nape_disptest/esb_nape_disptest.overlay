@@ -1,0 +1,126 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
+/*
+ * Nape Deck DISPLAY TEST variant — layer on top of esb_nape_rx:
+ *
+ *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest"
+ *
+ * The unit under test wires its ST7789V exactly like the Prospector
+ * adapter (carrefinho/prospector-zmk-module, boards/seeeduino_xiao_ble
+ * .overlay) instead of the pin plan in esb_nape_rx.overlay:
+ *
+ *   Display ST7789V, SPI3: SCK=D8(P1.13) MOSI=D10(P1.15)
+ *                          CS=D9(P1.14)  DC=D7(P1.12, unchanged)
+ *                          RESET=D3(P0.29)
+ *                          BL=D6(P1.11), PWM1 ch0, inverted
+ *
+ * Only the display is connected on this unit (no trackball sensor, no
+ * touch panel), so the PAW3222 sensor — whose SPI1 pins (D8/D9/D10)
+ * collide with the Prospector display wiring — is moved to dummy
+ * unconnected pins below instead of being disabled (ZMK's input
+ * listener references its DT node, so the node must stay enabled).
+ *
+ * Panel parameters (size, offsets, mdac, init values) are NOT touched
+ * here; they remain whatever esb_nape_rx defines. Touch (CST816S on
+ * I2C0) is likewise left as esb_nape_rx defines it.
+ */
+
+/* ---- Display SPI3 pinctrl: SCK P0.03->P1.13, MOSI P0.29->P1.15 ---- */
+&spi3_disp_default {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+			<NRF_PSEL(SPIM_MOSI, 1, 15)>;
+	};
+};
+
+&spi3_disp_sleep {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+			<NRF_PSEL(SPIM_MOSI, 1, 15)>;
+		/* low-power-enable stays from the esb_nape_rx definition. */
+	};
+};
+
+/* ---- Display CS: D2(P0.28) -> D9(P1.14); panel reset on D3(P0.29).
+ *      DC stays D7(P1.12) via the mipi_dbi node's dc-gpios. ---- */
+&spi3 {
+	cs-gpios = <&xiao_d 9 GPIO_ACTIVE_LOW>;
+
+	mipi_dbi {
+		/* In this Zephyr version the ST7789V driver resets the panel
+		 * through the MIPI-DBI host (mipi_dbi_reset()), so reset-gpios
+		 * belongs on the mipi_dbi node — in the flat Prospector
+		 * overlay it sat on the panel node itself. */
+		reset-gpios = <&xiao_d 3 GPIO_ACTIVE_LOW>;
+	};
+};
+
+/* ---- Backlight: PWM0/P0.16 -> PWM1 ch0 on D6(P1.11), inverted.
+ *      The pwm-leds node label (disp_bl) is unchanged, so the
+ *      activity-linked dimming in esb_nape_rx/src/brightness.c keeps
+ *      driving the same logical backlight. ---- */
+&pinctrl {
+	pwm1_disp_default: pwm1_disp_default {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 1, 11)>;
+			nordic,invert;
+		};
+	};
+
+	pwm1_disp_sleep: pwm1_disp_sleep {
+		group1 {
+			psels = <NRF_PSEL(PWM_OUT0, 1, 11)>;
+			low-power-enable;
+		};
+	};
+};
+
+&pwm1 {
+	status = "okay";
+	pinctrl-0 = <&pwm1_disp_default>;
+	pinctrl-1 = <&pwm1_disp_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* P0.16 backlight PWM of the base shield is not wired on this unit. */
+&pwm0 {
+	status = "disabled";
+};
+
+&disp_bl {
+	pwms = <&pwm1 0 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+};
+
+/* ---- Trackball PAW3222: DUMMY PINS (display-only test unit).
+ *      The sensor is not connected. Its real pins (SPI1 SCK=D8,
+ *      SDIO=D10, CS=D9, MOTION=D0) collide with the Prospector display
+ *      wiring above, so park the bus/lines on pins that are
+ *      unconnected in the display-only wiring:
+ *        SCK=D1(P0.03) SDIO=D2(P0.28) CS=D4(P0.04) MOTION=D5(P0.05)
+ *      (D4/D5 double as key inputs in the full build; harmless here.)
+ *      The node stays enabled on purpose — see header comment. ---- */
+&spi1_tb_default {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
+			<NRF_PSEL(SPIM_MOSI, 0, 28)>,
+			<NRF_PSEL(SPIM_MISO, 0, 28)>;
+	};
+};
+
+&spi1_tb_sleep {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
+			<NRF_PSEL(SPIM_MOSI, 0, 28)>,
+			<NRF_PSEL(SPIM_MISO, 0, 28)>;
+		/* low-power-enable stays from the esb_nape_rx definition. */
+	};
+};
+
+&spi1 {
+	cs-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+};
+
+&paw3222 {
+	irq-gpios = <&gpio0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+};

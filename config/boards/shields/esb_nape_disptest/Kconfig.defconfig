@@ -1,0 +1,8 @@
+if SHIELD_ESB_NAPE_DISPTEST
+
+# Layered display-test variant of esb_nape_rx: no Kconfig changes of
+# its own. It only carries a devicetree overlay that remaps the display
+# to the Prospector adapter pinout (see esb_nape_disptest.overlay).
+# Keyboard name etc. still come from esb_nape_rx.
+
+endif
