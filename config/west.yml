@@ -1,17 +1,17 @@
 manifest:
   remotes:
-    - name: vwbugowner1976
-      url-base: https://github.com/vwbugowner1976
+    - name: koorayworks
+      url-base: https://github.com/koorayworks
   projects:
     - name: zmk
-      remote: vwbugowner1976
+      remote: koorayworks
       revision: esb-hid
       import: app/west.yml
     - name: zmk-feature-esb-hid
-      remote: vwbugowner1976
+      remote: koorayworks
       revision: feat/studio-over-esb
     - name: zmk-driver-paw3222
-      remote: vwbugowner1976
+      remote: koorayworks
       revision: zmk-0.4
   self:
     path: config
