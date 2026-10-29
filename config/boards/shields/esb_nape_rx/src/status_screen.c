@@ -22,6 +22,14 @@
 #define COL_AMBER 0xFFB340
 #define COL_ALERT 0xFF453A
 
+/* Link-lost state colors: true neutral greys (R=G=B). The shared
+ * palette greys above are slightly blue, which reads as purple on
+ * this panel once the whole screen is greyed out, so the lost state
+ * uses its own values at similar luminance. */
+#define COL_LOST_MAIN 0x8C8C8C
+#define COL_LOST_MUTE 0x5A5A5A
+#define COL_LOST_DOT 0x6E6E6E
+
 /* Top-right link indicator positions. The wider "NO LINK" text of
  * the link-lost state would run off the 240 px stage at the normal
  * position, so in that state dot + label shift left together (and
@@ -88,7 +96,7 @@ static void refresh_cb(lv_timer_t *timer) {
 
     uint8_t own = zmk_battery_state_of_charge();
     lv_label_set_text_fmt(own_batt_label, "%d%%", own);
-    lv_obj_set_style_text_color(own_batt_label, lv_color_hex(link_lost ? COL_MUTE : COL_SUB),
+    lv_obj_set_style_text_color(own_batt_label, lv_color_hex(link_lost ? COL_LOST_MUTE : COL_SUB),
                                 LV_PART_MAIN);
 
     if (!linked) {
@@ -112,21 +120,21 @@ static void refresh_cb(lv_timer_t *timer) {
          * changes its label. */
         lv_obj_set_pos(link_dot, LINK_DOT_X_LOST, 13);
         lv_obj_set_pos(link_label, LINK_LABEL_X_LOST, 10);
-        lv_obj_set_style_bg_color(link_dot, lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(link_dot, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
         lv_label_set_text(link_label, "NO LINK");
-        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
 
         lv_label_set_text(kb_name_label, "KEYBOARD");
-        lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+        lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_LOST_MAIN), LV_PART_MAIN);
 
         lv_label_set_text_fmt(layer_label, "LAYER %d", st.layer);
-        lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         for (int i = 0; i < LAYER_COUNT; i++) {
-            lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
         }
 
-        lv_obj_set_style_text_color(batt_pct_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
-        lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(batt_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         if (st.battery == 0xFF) {
             lv_label_set_text(batt_pct_label, "--%");
             lv_obj_set_width(batt_gauge_fg, 0);
@@ -134,14 +142,14 @@ static void refresh_cb(lv_timer_t *timer) {
         } else {
             lv_label_set_text_fmt(batt_pct_label, "%d%%", st.battery);
             lv_obj_set_width(batt_gauge_fg, 208 * st.battery / 100);
-            lv_obj_set_style_bg_color(batt_gauge_fg, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(batt_gauge_fg, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
             lv_label_set_text_fmt(row_pct_label, "%d%%", st.battery);
         }
 
-        lv_obj_set_style_border_color(row_radio, lv_color_hex(COL_MUTE), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(row_radio, lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+        lv_obj_set_style_border_color(row_radio, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(row_radio, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
         lv_label_set_text(row_name_label, "KEYBOARD");
-        lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         return;
     }
 
