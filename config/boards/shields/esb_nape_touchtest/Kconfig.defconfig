@@ -1,0 +1,10 @@
+if SHIELD_ESB_NAPE_TOUCHTEST
+
+# Touch bring-up test variant layered on esb_nape_disptest: no
+# Kconfig changes of its own. The devicetree changes (CST816S moved
+# to the Scanner harness pins, kscan re-parked) live in
+# esb_nape_touchtest.overlay, the LVGL button widget is enabled via
+# esb_nape_touchtest.conf, and the test app is src/touch_test.c.
+# Keyboard name etc. still come from esb_nape_rx.
+
+endif

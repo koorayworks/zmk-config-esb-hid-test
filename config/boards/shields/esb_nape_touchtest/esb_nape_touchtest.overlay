@@ -1,0 +1,54 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/*
+ * Nape Deck TOUCH TEST variant — layer on top of esb_nape_disptest:
+ *
+ *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest;esb_nape_touchtest"
+ *
+ * The production esb_nape_rx puts the CST816S on the XIAO's hidden
+ * pads (SDA=P1.00, SCL=P1.10), but on the real unit the chip never
+ * answers there ("failed reading chip id"). The unit's display+touch
+ * module is wired with a touch-capable Scanner harness on the XIAO's
+ * exposed pins — that is how the display ended up on the Prospector
+ * pins (D8/D10/D9/D7/D3/D6) in the disptest layer. Hypothesis: the
+ * harness lands touch SDA/SCL on SDA=P1.02 / SCL=P1.04, which are
+ * free in the Prospector pinout. This variant moves I2C0 there and
+ * adds a bus scan + tap counter (src/touch_test.c) to prove where
+ * the chip actually answers.
+ *
+ * Nothing else changes: display, parked sensor and backlight stay
+ * exactly as the disptest layer defines them.
+ */
+
+/* ---- Touch CST816S: I2C0 hidden pads (P1.00/P1.10) -> harness pins
+ *      (SDA=P1.02, SCL=P1.04). bias-pull-up / low-power-enable stay
+ *      from the esb_nape_rx group definitions. ---- */
+&i2c0_touch_default {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
+			<NRF_PSEL(TWIM_SCL, 1, 4)>;
+	};
+};
+
+&i2c0_touch_sleep {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
+			<NRF_PSEL(TWIM_SCL, 1, 4)>;
+	};
+};
+
+/* ---- Local keys: RE-PARKED for this variant.
+ *      The disptest layer parks the dummy kscan inputs on
+ *      P1.02/P1.03/P1.04, but P1.02/P1.04 are the touch lines here,
+ *      so the kscan must not claim them. (P0.02/P0.03 are not free
+ *      either: the disptest layer parks the dummy PAW3222 CS/SCK on
+ *      them.) Park the inputs on P1.03 (kept from disptest) plus
+ *      P0.12 and P0.17 — plain GPIOs that are not broken out on the
+ *      XIAO edge and are claimed by nothing else in this build — so
+ *      they can never generate key events. ---- */
+&kscan {
+	input-gpios =
+		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+		<&gpio0 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+		<&gpio0 17 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+};

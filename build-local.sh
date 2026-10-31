@@ -46,6 +46,12 @@ west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-rx -- \
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-disptest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest" -DZMK_CONFIG="$PWD/config"
 
+# Nape touch test: disptest + esb_nape_touchtest layered on top.
+# Moves the CST816S to the Scanner harness pins (SDA=P1.02/SCL=P1.04)
+# and adds an I2C bus scan + on-screen tap counter for bring-up.
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-touchtest -- \
+  "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest" -DZMK_CONFIG="$PWD/config"
+
 mkdir -p firmware
 # cp build/tx/zephyr/zmk.uf2 firmware/esb_tx.uf2
 # cp build/rx/zephyr/zmk.uf2 firmware/esb_rx.uf2
@@ -54,6 +60,7 @@ cp build/kozakura-tx/zephyr/zmk.uf2 firmware/esb_kozakura_tx.uf2
 cp build/tentalice-tx/zephyr/zmk.uf2 firmware/esb_tentalice_tx.uf2
 cp build/nape-rx/zephyr/zmk.uf2 firmware/esb_nape_rx.uf2
 cp build/nape-disptest/zephyr/zmk.uf2 firmware/esb_nape_disptest.uf2
+cp build/nape-touchtest/zephyr/zmk.uf2 firmware/esb_nape_touchtest.uf2
 
 # echo "TX: firmware/esb_tx.uf2"
 # echo "RX: firmware/esb_rx.uf2"
@@ -62,3 +69,4 @@ echo "koZakura TX: firmware/esb_kozakura_tx.uf2"
 echo "Tentalice TX: firmware/esb_tentalice_tx.uf2"
 echo "Nape RX: firmware/esb_nape_rx.uf2"
 echo "Nape display test: firmware/esb_nape_disptest.uf2"
+echo "Nape touch test: firmware/esb_nape_touchtest.uf2"
