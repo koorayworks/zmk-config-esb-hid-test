@@ -1,0 +1,11 @@
+if SHIELD_ESB_KOZAKURA_TX
+
+config ZMK_KEYBOARD_NAME
+	default "ESB koZakura TX"
+
+# The koZakura48 matrix wires columns on the NFC pins (P0.09/P0.10);
+# the original shield sets this in its Kconfig.defconfig as well.
+config NFCT_PINS_AS_GPIOS
+	default y
+
+endif

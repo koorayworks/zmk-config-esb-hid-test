@@ -1,0 +1,129 @@
+/*
+ * Left half (26 keys) of the koZakura48 keymap, ported from
+ * zmk-config-koZakura (config/koZakura48.keymap). The original is
+ * a single 51-position keymap for both halves; the bindings below
+ * are the left half's positions, in the original order.
+ *
+ * Simplifications for this ESB test config:
+ * - The BT layer (layer 4) keeps its shape, but the &bt bindings
+ *   are &trans here (BLE is disabled, same as esb_nickey_tx);
+ *   &bootloader on that layer is kept.
+ * - No sensor-bindings: the rotary encoder is not carried over
+ *   (see the shield overlay), so the encoder's volume control and
+ *   the scroll sensor behaviors are omitted.
+ * - The custom behaviors (to_layer_0 macro, lt_to_layer_0 and
+ *   mo_tog hold-taps) and the &mt override are carried over from
+ *   the original, minus the ZMK 0.3-era `label` properties.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/pointing.h>
+
+&mt {
+    flavor = "balanced";
+    quick-tap-ms = <0>;
+};
+
+/ {
+    macros {
+        to_layer_0: to_layer_0 {
+            compatible = "zmk,behavior-macro-one-param";
+            #binding-cells = <1>;
+            bindings = <&to 0 &macro_param_1to1 &kp MACRO_PLACEHOLDER>;
+        };
+    };
+
+    behaviors {
+        lt_to_layer_0: lt_to_layer_0 {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            bindings = <&mo>, <&to_layer_0>;
+            tapping-term-ms = <200>;
+        };
+
+        mo_tog: mo_tog {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "hold-preferred";
+            tapping-term-ms = <200>;
+            bindings = <&mo>, <&tog>;
+        };
+    };
+
+    keymap {
+        compatible = "zmk,keymap";
+
+        default_layer {
+            display-name = "Base";
+            bindings = <
+                &kp ESCAPE  &kp SEMI  &kp COMMA  &kp DOT  &kp P  &kp Y
+                &mt LCTRL TAB  &kp A  &kp O  &kp E  &kp U  &kp I  &kp ENTER
+                &kp LSHIFT  &kp L  &kp Q  &kp J  &kp K  &kp X  &lt 4 C_MUTE
+                &mo_tog 5 2  &kp LALT  &kp LWIN  &kp LANG2  &lt 1 SPACE  &kp BACKSPACE
+            >;
+        };
+
+        layer_1 {
+            display-name = "NumSym";
+            bindings = <
+                &to 0  &kp N1  &kp N2  &kp N3  &kp N4  &kp N5
+                &trans  &kp EXCL  &kp AT  &kp HASH  &kp DLLR  &kp PRCNT  &trans
+                &trans  &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &kp F6
+                &mo 5  &trans  &trans  &trans  &trans  &trans
+            >;
+        };
+
+        layer_2 {
+            display-name = "Numpad";
+            bindings = <
+                &to 0  &trans  &kp KP_N7  &kp KP_N8  &kp KP_N9  &kp KP_ASTERISK
+                &trans  &trans  &kp KP_N4  &kp KP_N5  &kp KP_N6  &kp KP_MINUS  &kp KP_SLASH
+                &trans  &kp KP_N0  &kp KP_N1  &kp KP_N2  &kp KP_N3  &kp KP_PLUS  &kp KP_NUM
+                &trans  &trans  &trans  &trans  &kp KP_DOT  &kp KP_EQUAL
+            >;
+        };
+
+        layer_3 {
+            display-name = "Nav";
+            bindings = <
+                &to 0  &trans  &kp LC(LS(TAB))  &kp PRINTSCREEN  &kp LC(TAB)  &trans
+                &trans  &trans  &kp LG(LEFT_ARROW)  &kp LG(RIGHT_ARROW)  &kp LC(LG(LEFT_ARROW))  &kp LC(LG(RIGHT_ARROW))  &trans
+                &trans  &kp LEFT_SHIFT  &kp LG(LS(LEFT_ARROW))  &trans  &kp LG(LS(RIGHT_ARROW))  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans
+            >;
+        };
+
+        layer_4 {
+            display-name = "System";
+            bindings = <
+                &to 0  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans  &bootloader
+                &trans  &trans  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans
+            >;
+        };
+
+        layer_5 {
+            display-name = "Mouse";
+            bindings = <
+                &to 0  &trans  &trans  &mkp MB3  &trans  &trans
+                &trans  &trans  &mkp MB2  &mo 6  &mkp MB1  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans
+            >;
+        };
+
+        layer_6 {
+            display-name = "Mouse 2";
+            bindings = <
+                &to 0  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans  &trans
+                &trans  &trans  &trans  &trans  &trans  &trans
+            >;
+        };
+    };
+};
