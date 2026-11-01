@@ -1,10 +1,12 @@
 if SHIELD_ESB_NAPE_TOUCHTEST
 
 # Touch bring-up test variant layered on esb_nape_disptest: no
-# Kconfig changes of its own. The devicetree changes (CST816S moved
-# to the Scanner harness pins, kscan re-parked) live in
-# esb_nape_touchtest.overlay, the LVGL button widget is enabled via
-# esb_nape_touchtest.conf, and the test app is src/touch_test.c.
-# Keyboard name etc. still come from esb_nape_rx.
+# Kconfig changes of its own. The devicetree changes (dummy PAW3222
+# sensor, its SPI1 bus and the dummy kscan disabled, so the parked
+# pins of the disptest layer can no longer hold a touch line in
+# reset) live in esb_nape_touchtest.overlay, the LVGL button widget
+# is enabled via esb_nape_touchtest.conf, and the test app (GPIO
+# bit-bang I2C scan over the candidate pin pairs + tap screen) is
+# src/touch_test.c. Keyboard name etc. still come from esb_nape_rx.
 
 endif
