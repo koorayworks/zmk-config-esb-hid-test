@@ -22,9 +22,14 @@
  *
  *  - The PAW3222 sensor node AND its SPI1 bus are disabled outright,
  *    so the parked pinctrl is never applied and nothing claims
- *    D0/D1/D2. (The zmk,input-listener instance that references the
- *    sensor compiles out when its device is not "okay", so
- *    disabling the sensor is safe.)
+ *    D0/D1/D2. This is now known to be the crux, not just hygiene:
+ *    the Prospector schematic confirms TP_RST lands on D1 = P0.03 —
+ *    the parked dummy SPI's SCK pin, idle-low, i.e. the touch chip
+ *    was held in reset by it. src/touch_test.c drives P0.03 HIGH
+ *    before scanning to release TP_RST explicitly. (The
+ *    zmk,input-listener instance that references the sensor
+ *    compiles out when its device is not "okay", so disabling the
+ *    sensor is safe.)
  *  - The dummy kscan cannot be disabled: zmk's physical_layouts.c
  *    takes DEVICE_DT_GET(DT_CHOSEN(zmk_kscan)) unconditionally and
  *    a disabled node has no device struct (build error). Instead

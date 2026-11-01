@@ -3,20 +3,21 @@
  *
  *  - ~3 s after boot, bit-bangs an I2C address scan over the
  *    candidate (SDA, SCL) pin pairs on raw GPIOs and logs every
- *    address that ACKs, to find where the CST816S (expected at
- *    0x15) is actually wired on the Scanner harness:
+ *    address that ACKs. The Scanner harness wiring is confirmed
+ *    from the Prospector schematic:
+ *        TP_SDA -> D4 = P1.02,  TP_SCL -> D5 = P1.04
+ *        TP_RST -> D1 = P0.03,  TP_IRQ -> D0 = P0.02
+ *    TP_RST is the reason the chip never answered anywhere: the
+ *    disptest layer parks its dummy PAW3222 SPI SCK on P0.03, and
+ *    an idle-low SCK held the touch chip in reset the whole time.
+ *    This variant disables that dummy SPI (see the overlay) and,
+ *    before scanning, drives P0.03 HIGH as a GPIO output to release
+ *    TP_RST explicitly. P0.02 (TP_IRQ, unused while polling) is a
+ *    pulled-up input. The confirmed pair (P1.02, P1.04) is scanned
+ *    first; the former candidates follow as a sanity sweep:
  *        (P1.00, P1.10)  production hidden-pad plan (HW I2C: silent)
  *        (P1.10, P1.00)  same pair, swapped
- *        (P1.02, P1.04)  XIAO standard I2C D4/D5 (v1 HW I2C scan:
- *                        silent — but in v1 the parked dummy SPI may
- *                        have held the chip in reset; the parking is
- *                        gone in this build, so retest cleanly)
  *        (P1.04, P1.02)  D5/D4, swapped
- *    Before scanning, D0/D1/D2 (P0.02/P0.03/P0.28) are configured as
- *    inputs with pull-ups: if the harness lands the touch RST (or
- *    any other touch line) there, this releases it instead of
- *    leaving it driven by the parked SPI pinctrl of the disptest
- *    layer (which this variant disables outright — see the overlay).
  *  - Loads a screen with a single explicitly styled button over the
  *    status screen; every press increments the on-screen counter
  *    and logs "TOUCHTEST tap #N", proving the chain CST816S ->
@@ -114,10 +115,10 @@ static bool bb_probe(const struct bb_pair *p, uint8_t byte) {
 }
 
 static const struct bb_pair bb_pairs[] = {
-    {0, 10, "P1.00", "P1.10"},
-    {10, 0, "P1.10", "P1.00"},
-    {2, 4, "P1.02", "P1.04"},
-    {4, 2, "P1.04", "P1.02"},
+    {2, 4, "P1.02", "P1.04"},  /* confirmed harness wiring: TP_SDA/TP_SCL */
+    {0, 10, "P1.00", "P1.10"}, /* production hidden-pad plan */
+    {10, 0, "P1.10", "P1.00"}, /* same pair, swapped */
+    {4, 2, "P1.04", "P1.02"},  /* D5/D4, swapped */
 };
 
 static void scan_work_handler(struct k_work *work) {
@@ -128,17 +129,21 @@ static void scan_work_handler(struct k_work *work) {
         return;
     }
 
-    /* Release D0/D1/D2 first: if the harness lands the touch RST
-     * (or another touch line) on one of them, a pulled-up input
-     * lets the chip run instead of holding it in reset. */
-    static const uint8_t harness_pins[] = {2, 3, 28}; /* P0.02, P0.03, P0.28 */
-
-    for (size_t i = 0; i < ARRAY_SIZE(harness_pins); i++) {
-        gpio_pin_configure(gpio0_dev, harness_pins[i], GPIO_INPUT | GPIO_PULL_UP);
-    }
-    /* Give a chip that was held in reset a moment to boot before
-     * its address is probed. */
-    k_msleep(50);
+    /* Release the touch reset FIRST, and drive it, don't float it:
+     * TP_RST lands on D1 = P0.03 (confirmed from the Prospector
+     * schematic), exactly the pin the disptest layer's parked dummy
+     * SPI held low as its idle SCK. That SPI is disabled in this
+     * variant (see the overlay), so the pin is free to claim as a
+     * GPIO output and hold HIGH. TP_IRQ (D0 = P0.02, unused while
+     * polling) and the formerly parked MOSI line (P0.28) become
+     * pulled-up inputs. */
+    gpio_pin_configure(gpio0_dev, 3, GPIO_OUTPUT_HIGH);
+    LOG_INF("TOUCHTEST TP_RST released (P0.03=HIGH)");
+    gpio_pin_configure(gpio0_dev, 2, GPIO_INPUT | GPIO_PULL_UP);
+    gpio_pin_configure(gpio0_dev, 28, GPIO_INPUT | GPIO_PULL_UP);
+    /* Give the chip a moment to boot out of reset before its
+     * address is probed. */
+    k_msleep(100);
 
     for (size_t i = 0; i < ARRAY_SIZE(bb_pairs); i++) {
         const struct bb_pair *p = &bb_pairs[i];
