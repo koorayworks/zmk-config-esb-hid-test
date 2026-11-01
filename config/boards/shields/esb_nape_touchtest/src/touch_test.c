@@ -1,29 +1,28 @@
 /*
- * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v2.
+ * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v3.
  *
- *  - ~3 s after boot, bit-bangs an I2C address scan over the
- *    candidate (SDA, SCL) pin pairs on raw GPIOs and logs every
- *    address that ACKs. The Scanner harness wiring is confirmed
- *    from the Prospector schematic:
- *        TP_SDA -> D4 = P1.02,  TP_SCL -> D5 = P1.04
- *        TP_RST -> D1 = P0.03,  TP_IRQ -> D0 = P0.02
- *    TP_RST is the reason the chip never answered anywhere: the
- *    disptest layer parks its dummy PAW3222 SPI SCK on P0.03, and
- *    an idle-low SCK held the touch chip in reset the whole time.
- *    This variant disables that dummy SPI (see the overlay) and,
- *    before scanning, drives P0.03 HIGH as a GPIO output to release
- *    TP_RST explicitly. P0.02 (TP_IRQ, unused while polling) is a
- *    pulled-up input. The confirmed pair (P1.02, P1.04) is scanned
- *    first; the former candidates follow as a sanity sweep:
- *        (P1.00, P1.10)  production hidden-pad plan (HW I2C: silent)
- *        (P1.10, P1.00)  same pair, swapped
- *        (P1.04, P1.02)  D5/D4, swapped
- *  - Loads a screen with a single explicitly styled button over the
- *    status screen; every press increments the on-screen counter
- *    and logs "TOUCHTEST tap #N", proving the chain CST816S ->
- *    input subsystem -> LVGL pointer input end to end. The v1
- *    button relied on the default theme and rendered invisible;
- *    v2 sets its colors explicitly.
+ * v1 (hardware I2C scan on the guessed pins) and v2 (GPIO bit-bang
+ * scan over four pin pairs, TP_RST driven HIGH by hand) both found
+ * zero ACKs, so v3 changes strategy to the production-style setup
+ * (see the shield overlay): hardware TWIM on the confirmed harness
+ * pins (TP_SDA -> P1.02, TP_SCL -> P1.04) and the CST816S reset line
+ * (TP_RST -> P0.03) owned by the Zephyr cst816s driver via
+ * rst-gpios, which pulses reset properly at driver init.
+ *
+ * This app only cross-checks and provides the tap target:
+ *
+ *  - ~4 s after boot, one address scan over the REAL i2c0 device
+ *    (TWIM, the same path the driver uses) logs every address that
+ *    ACKs. If the driver found the chip, 0x15 must show up here
+ *    too; if the driver logged "failed reading chip id" but the
+ *    scan ACKs, the chip is alive and the problem is narrower.
+ *
+ *  - A screen with a single explicitly styled button is loaded over
+ *    the status screen; every press increments the on-screen
+ *    counter and logs "TOUCHTEST tap #N", proving the chain
+ *    CST816S -> input subsystem -> LVGL pointer input end to end.
+ *    (The v1 button relied on the default theme and rendered
+ *    invisible; the explicit styles stay.)
  *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
@@ -33,7 +32,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
 
 #include <lvgl.h>
@@ -41,134 +40,32 @@
 
 LOG_MODULE_REGISTER(touchtest);
 
-static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-static const struct device *const gpio1_dev = DEVICE_DT_GET(DT_NODELABEL(gpio1));
+static const struct device *const i2c_bus = DEVICE_DT_GET(DT_NODELABEL(i2c0));
 
-/* ---- Bit-bang I2C scan (system work queue, ~3 s after boot) ----
- *
- * Open-drain emulation with raw GPIO: drive a line low with
- * GPIO_OUTPUT_LOW, release it by switching back to a pulled-up
- * input, and read SDA while it is released. Conservative timings
- * (~25 us per phase, ~40 kHz) so the probe works even with weak
- * pull-ups on the harness.
- */
-
-#define BB_HALF_US 25
-
-struct bb_pair {
-    uint8_t sda_pin; /* on gpio1 */
-    uint8_t scl_pin; /* on gpio1 */
-    const char *sda_name;
-    const char *scl_name;
-};
-
-static void bb_drive_low(uint8_t pin) { gpio_pin_configure(gpio1_dev, pin, GPIO_OUTPUT_LOW); }
-
-static void bb_release(uint8_t pin) { gpio_pin_configure(gpio1_dev, pin, GPIO_INPUT | GPIO_PULL_UP); }
-
-static int bb_read_sda(uint8_t pin) { return gpio_pin_get(gpio1_dev, pin); }
-
-static void bb_start(const struct bb_pair *p) {
-    bb_release(p->sda_pin);
-    bb_release(p->scl_pin);
-    k_busy_wait(BB_HALF_US);
-    bb_drive_low(p->sda_pin);
-    k_busy_wait(BB_HALF_US);
-    bb_drive_low(p->scl_pin);
-    k_busy_wait(BB_HALF_US);
-}
-
-static void bb_stop(const struct bb_pair *p) {
-    bb_drive_low(p->sda_pin);
-    k_busy_wait(BB_HALF_US);
-    bb_release(p->scl_pin);
-    k_busy_wait(BB_HALF_US);
-    bb_release(p->sda_pin);
-    k_busy_wait(BB_HALF_US);
-}
-
-/* Shift out one byte (write direction) and sample the ACK bit. */
-static bool bb_probe(const struct bb_pair *p, uint8_t byte) {
-    for (int i = 0; i < 8; i++) {
-        if (byte & 0x80) {
-            bb_release(p->sda_pin);
-        } else {
-            bb_drive_low(p->sda_pin);
-        }
-        k_busy_wait(BB_HALF_US);
-        bb_release(p->scl_pin);
-        k_busy_wait(BB_HALF_US);
-        bb_drive_low(p->scl_pin);
-        k_busy_wait(BB_HALF_US);
-        byte <<= 1;
-    }
-
-    bb_release(p->sda_pin);
-    k_busy_wait(BB_HALF_US);
-    bb_release(p->scl_pin);
-    k_busy_wait(BB_HALF_US);
-    bool ack = bb_read_sda(p->sda_pin) == 0;
-    bb_drive_low(p->scl_pin);
-    k_busy_wait(BB_HALF_US);
-
-    return ack;
-}
-
-static const struct bb_pair bb_pairs[] = {
-    {2, 4, "P1.02", "P1.04"},  /* confirmed harness wiring: TP_SDA/TP_SCL */
-    {0, 10, "P1.00", "P1.10"}, /* production hidden-pad plan */
-    {10, 0, "P1.10", "P1.00"}, /* same pair, swapped */
-    {4, 2, "P1.04", "P1.02"},  /* D5/D4, swapped */
-};
+/* ---- Hardware I2C scan (system work queue, ~4 s after boot) ---- */
 
 static void scan_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    if (!device_is_ready(gpio0_dev) || !device_is_ready(gpio1_dev)) {
-        LOG_ERR("TOUCHTEST bbscan: gpio not ready");
+    if (!device_is_ready(i2c_bus)) {
+        LOG_ERR("TOUCHTEST hwscan: i2c0 not ready");
         return;
     }
 
-    /* Release the touch reset FIRST, and drive it, don't float it:
-     * TP_RST lands on D1 = P0.03 (confirmed from the Prospector
-     * schematic), exactly the pin the disptest layer's parked dummy
-     * SPI held low as its idle SCK. That SPI is disabled in this
-     * variant (see the overlay), so the pin is free to claim as a
-     * GPIO output and hold HIGH. TP_IRQ (D0 = P0.02, unused while
-     * polling) and the formerly parked MOSI line (P0.28) become
-     * pulled-up inputs. */
-    gpio_pin_configure(gpio0_dev, 3, GPIO_OUTPUT_HIGH);
-    LOG_INF("TOUCHTEST TP_RST released (P0.03=HIGH)");
-    gpio_pin_configure(gpio0_dev, 2, GPIO_INPUT | GPIO_PULL_UP);
-    gpio_pin_configure(gpio0_dev, 28, GPIO_INPUT | GPIO_PULL_UP);
-    /* Give the chip a moment to boot out of reset before its
-     * address is probed. */
-    k_msleep(100);
+    int found = 0;
 
-    for (size_t i = 0; i < ARRAY_SIZE(bb_pairs); i++) {
-        const struct bb_pair *p = &bb_pairs[i];
+    for (uint16_t addr = 0x08; addr <= 0x77; addr++) {
+        uint8_t byte;
 
-        bb_release(p->sda_pin);
-        bb_release(p->scl_pin);
-        k_busy_wait(4 * BB_HALF_US);
-
-        for (uint16_t addr = 0x08; addr <= 0x77; addr++) {
-            bb_start(p);
-            bool ack = bb_probe(p, (uint8_t)(addr << 1));
-            bb_stop(p);
-
-            if (ack) {
-                LOG_INF("TOUCHTEST bbscan SDA=%s SCL=%s -> ACK 0x%02x", p->sda_name, p->scl_name,
-                        addr);
-            }
+        /* A 1-byte read is the portable probe: devices that ACK
+         * their address return success, everything else errors. */
+        if (i2c_read(i2c_bus, &byte, 1, addr) == 0) {
+            LOG_INF("TOUCHTEST hwscan: ACK at 0x%02x", addr);
+            found++;
         }
-
-        /* Leave the pair released for the next candidate. */
-        bb_release(p->sda_pin);
-        bb_release(p->scl_pin);
     }
 
-    LOG_INF("TOUCHTEST bbscan done");
+    LOG_INF("TOUCHTEST hwscan done: %d devices", found);
 }
 
 static K_WORK_DELAYABLE_DEFINE(scan_work, scan_work_handler);
@@ -233,7 +130,7 @@ static K_WORK_DELAYABLE_DEFINE(boot_work, boot_work_handler);
 
 static int touchtest_init(void) {
     k_work_schedule(&boot_work, K_SECONDS(2));
-    k_work_schedule(&scan_work, K_SECONDS(3));
+    k_work_schedule(&scan_work, K_SECONDS(4));
     return 0;
 }
 

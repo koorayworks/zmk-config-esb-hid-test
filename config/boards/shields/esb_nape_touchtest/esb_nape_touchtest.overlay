@@ -5,43 +5,42 @@
  *
  *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest;esb_nape_touchtest"
  *
- * v1 of this variant moved the CST816S's hardware I2C0 to the guessed
- * Scanner harness pins (SDA=P1.02, SCL=P1.04) and scanned the bus:
- * 0 devices. The chip also never answered on the production pins
- * (SDA=P1.00, SCL=P1.10) in the esb_nape_rx build. One suspect that
- * v1 left in place: the disptest layer "parks" the dummy PAW3222 SPI
- * on D1/D2/D0 (SCK=P0.03, MOSI/SDIO=P0.28, CS=P0.02) and the dummy
- * kscan inputs on P1.02/P1.03/P1.04. If the Scanner harness lands a
- * touch line on D0/D1/D2 — the RST line above all — the parked SPI
- * pinctrl keeps those pins configured as peripheral lines and can
- * hold the touch chip in reset, which would explain why it answers
- * on no I2C pin pair at all.
+ * v1 moved hardware I2C0 to the guessed Scanner harness pins
+ * (SDA=P1.02, SCL=P1.04) and scanned the bus: 0 devices, because the
+ * touch chip was being held in reset (see below). v2 unparked every
+ * dummy node and bit-banged an address scan over four (SDA, SCL)
+ * pairs after driving TP_RST HIGH from the test app: still zero
+ * ACKs everywhere. The bit-bang probe itself is now the prime
+ * suspect (drive mode / pull-up behaviour on raw GPIOs), so v3
+ * stops probing sideways and instead configures the bus exactly the
+ * way the production build would, making this variant double as the
+ * real integration candidate:
  *
- * v2 therefore removes every parking side effect instead of moving
- * it around:
+ *  - Hardware I2C0 (TWIM) goes to the confirmed harness pins
+ *    TP_SDA -> D4 = P1.02, TP_SCL -> D5 = P1.04 (only psels are
+ *    overridden; bias-pull-up / low-power-enable stay inherited
+ *    from the esb_nape_rx pinctrl groups).
  *
- *  - The PAW3222 sensor node AND its SPI1 bus are disabled outright,
- *    so the parked pinctrl is never applied and nothing claims
- *    D0/D1/D2. This is now known to be the crux, not just hygiene:
- *    the Prospector schematic confirms TP_RST lands on D1 = P0.03 —
- *    the parked dummy SPI's SCK pin, idle-low, i.e. the touch chip
- *    was held in reset by it. src/touch_test.c drives P0.03 HIGH
- *    before scanning to release TP_RST explicitly. (The
- *    zmk,input-listener instance that references the sensor
- *    compiles out when its device is not "okay", so disabling the
- *    sensor is safe.)
- *  - The dummy kscan cannot be disabled: zmk's physical_layouts.c
- *    takes DEVICE_DT_GET(DT_CHOSEN(zmk_kscan)) unconditionally and
- *    a disabled node has no device struct (build error). Instead
- *    all three of its inputs are parked on P1.03 alone — the one
- *    disptest parking pin that is not an I2C candidate and not a
- *    D-pin — so it claims nothing the touch wiring could use.
- *  - The v1 I2C0 pinctrl move is reverted (the blocks are gone):
- *    hardware I2C0 sits on the production pins again and the CST816S
- *    driver still fails init there — expected and harmless in this
- *    variant. Finding the chip is src/touch_test.c's job now: it
- *    bit-bangs an address scan over the candidate (SDA, SCL) GPIO
- *    pairs after first releasing D0/D1/D2 as pulled-up inputs.
+ *  - The CST816S node gains rst-gpios on TP_RST -> D1 = P0.03, so
+ *    the Zephyr cst816s driver's own cst816s_chip_reset() pulses the
+ *    reset line at init (assert 5 ms, release, wait 50 ms) before
+ *    it reads the chip ID — the proper TWIM + reset sequencing
+ *    that neither v1 (no reset handling at all) nor v2 (manual
+ *    reset + bit-bang) exercised. NOTE: in this Zephyr tree the
+ *    binding property is named "rst-gpios"
+ *    (zephyr/dts/bindings/input/hynitron,cst816s.yaml), read by the
+ *    driver via GPIO_DT_SPEC_INST_GET_OR(index, rst_gpios, {}).
+ *
+ *  - The v2 unparking stays: the PAW3222 sensor node AND its SPI1
+ *    bus are disabled outright, so the disptest layer's parked
+ *    pinctrl (SCK on P0.03 = TP_RST, idle-low) can never claim the
+ *    touch lines. The dummy kscan cannot be disabled (zmk's
+ *    physical_layouts.c takes DEVICE_DT_GET(DT_CHOSEN(zmk_kscan))
+ *    unconditionally and a disabled node has no device struct), so
+ *    all three of its inputs stay parked on P1.03 alone.
+ *
+ * src/touch_test.c cross-checks the driver with one address scan
+ * over the real i2c0 device and keeps the tap counter screen.
  *
  * Nothing else changes: display and backlight stay exactly as the
  * disptest layer defines them.
@@ -60,4 +59,30 @@
 		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
 		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
 		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+};
+
+/* ---- Touch CST816S: I2C0 to the confirmed harness pins.
+ *      Only psels change; the rest of each group (bias-pull-up in
+ *      default, low-power-enable in sleep) is inherited from the
+ *      esb_nape_rx definitions. ---- */
+&i2c0_touch_default {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
+			<NRF_PSEL(TWIM_SCL, 1, 4)>;
+	};
+};
+
+&i2c0_touch_sleep {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
+			<NRF_PSEL(TWIM_SCL, 1, 4)>;
+	};
+};
+
+/* ---- TP_RST -> D1 = P0.03, pulsed by the cst816s driver itself.
+ *      CST816S reset is active-low; GPIO_ACTIVE_LOW makes the
+ *      driver's GPIO_OUTPUT_ACTIVE assertion drive the pin LOW and
+ *      its release drive it HIGH. ---- */
+&cst816s {
+	rst-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
 };
