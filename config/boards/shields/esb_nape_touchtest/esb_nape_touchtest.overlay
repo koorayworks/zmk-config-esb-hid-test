@@ -5,42 +5,40 @@
  *
  *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest;esb_nape_touchtest"
  *
- * v1 moved hardware I2C0 to the guessed Scanner harness pins
- * (SDA=P1.02, SCL=P1.04) and scanned the bus: 0 devices, because the
- * touch chip was being held in reset (see below). v2 unparked every
- * dummy node and bit-banged an address scan over four (SDA, SCL)
- * pairs after driving TP_RST HIGH from the test app: still zero
- * ACKs everywhere. The bit-bang probe itself is now the prime
- * suspect (drive mode / pull-up behaviour on raw GPIOs), so v3
- * stops probing sideways and instead configures the bus exactly the
- * way the production build would, making this variant double as the
- * real integration candidate:
+ * v1–v3 all probed the WRONG bus. They put the CST816S on i2c0 with
+ * custom pinctrl — first the XIAO hidden pads (P1.00/P1.10), then
+ * P1.02/P1.04 — and never got a single ACK, even with the dummy
+ * nodes unparked (v2) and the driver pulsing TP_RST itself (v3).
  *
- *  - Hardware I2C0 (TWIM) goes to the confirmed harness pins
- *    TP_SDA -> D4 = P1.02, TP_SCL -> D5 = P1.04 (only psels are
- *    overridden; bias-pull-up / low-power-enable stay inherited
- *    from the esb_nape_rx pinctrl groups).
+ * v4 copies the one configuration that is PROVEN on this exact
+ * hardware: the user's own prospector-bridge firmware
+ * (config/xiao_ble.overlay), where touch works. Its recipe:
  *
- *  - The CST816S node gains rst-gpios on TP_RST -> D1 = P0.03, so
- *    the Zephyr cst816s driver's own cst816s_chip_reset() pulses the
- *    reset line at init (assert 5 ms, release, wait 50 ms) before
- *    it reads the chip ID — the proper TWIM + reset sequencing
- *    that neither v1 (no reset handling at all) nor v2 (manual
- *    reset + bit-bang) exercised. NOTE: in this Zephyr tree the
- *    binding property is named "rst-gpios"
- *    (zephyr/dts/bindings/input/hynitron,cst816s.yaml), read by the
- *    driver via GPIO_DT_SPEC_INST_GET_OR(index, rst_gpios, {}).
+ *  - The touch controller (a CST816T, driven as "hynitron,cst816s")
+ *    sits on the XIAO connector I2C, &xiao_i2c — which in this
+ *    Zephyr tree is **i2c1**, not i2c0. The board's default i2c1
+ *    pinctrl is SDA=P0.04 / SCL=P0.05, i.e. exactly the D4/D5 pins
+ *    the Scanner harness lands TP_SDA/TP_SCL on (see the xiao_d
+ *    gpio-map in seeed_xiao_connector.dtsi: D4->gpio0 4, D5->gpio0
+ *    5). No custom pinctrl is needed or wanted.
  *
- *  - The v2 unparking stays: the PAW3222 sensor node AND its SPI1
- *    bus are disabled outright, so the disptest layer's parked
- *    pinctrl (SCK on P0.03 = TP_RST, idle-low) can never claim the
- *    touch lines. The dummy kscan cannot be disabled (zmk's
- *    physical_layouts.c takes DEVICE_DT_GET(DT_CHOSEN(zmk_kscan))
- *    unconditionally and a disabled node has no device struct), so
- *    all three of its inputs stay parked on P1.03 alone.
+ *  - Bus clock is 100 kHz (I2C_BITRATE_STANDARD), not 400 kHz.
  *
- * src/touch_test.c cross-checks the driver with one address scan
- * over the real i2c0 device and keeps the tap counter screen.
+ *  - The driver runs in INTERRUPT mode (conf:
+ *    CONFIG_INPUT_CST816S_INTERRUPT=y) with irq-gpios on
+ *    TP_IRQ -> D0 = P0.02 and rst-gpios on TP_RST -> D1 = P0.03.
+ *    All previous Deck variants used polling with no irq line.
+ *
+ * The old cst816s node that esb_nape_rx puts on i2c0 is disabled,
+ * the new node takes its place on i2c1 under the bridge's own label
+ * (touch_sensor), and the LVGL pointer input is repointed at it.
+ *
+ * The v2 unparking stays: the PAW3222 node and its SPI1 bus are
+ * disabled outright (SPIM1 shares the 0x40004000 instance with
+ * TWIM1, so this also frees the peripheral for i2c1), and the dummy
+ * kscan inputs stay parked on P1.03 alone (the kscan node cannot
+ * be disabled: zmk's physical_layouts.c takes
+ * DEVICE_DT_GET(DT_CHOSEN(zmk_kscan)) unconditionally).
  *
  * Nothing else changes: display and backlight stay exactly as the
  * disptest layer defines them.
@@ -61,28 +59,33 @@
 		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 };
 
-/* ---- Touch CST816S: I2C0 to the confirmed harness pins.
- *      Only psels change; the rest of each group (bias-pull-up in
- *      default, low-power-enable in sleep) is inherited from the
- *      esb_nape_rx definitions. ---- */
-&i2c0_touch_default {
-	group1 {
-		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
-			<NRF_PSEL(TWIM_SCL, 1, 4)>;
-	};
-};
-
-&i2c0_touch_sleep {
-	group1 {
-		psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
-			<NRF_PSEL(TWIM_SCL, 1, 4)>;
-	};
-};
-
-/* ---- TP_RST -> D1 = P0.03, pulsed by the cst816s driver itself.
- *      CST816S reset is active-low; GPIO_ACTIVE_LOW makes the
- *      driver's GPIO_OUTPUT_ACTIVE assertion drive the pin LOW and
- *      its release drive it HIGH. ---- */
+/* ---- The old touch node on i2c0 (esb_nape_rx) is replaced. ---- */
 &cst816s {
-	rst-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+	status = "disabled";
+};
+
+/* ---- Touch, mirroring prospector-bridge config/xiao_ble.overlay.
+ *      The bridge expresses the GPIOs via &xiao_d (D0/D1); the
+ *      connector map resolves those to gpio0 2 / gpio0 3, which is
+ *      what the rest of our overlays use directly. ---- */
+&xiao_i2c {
+	/* The board stack leaves i2c1 disabled (ZMK's xiao_ble turns
+	 * unused peripherals off); the bridge build enables it by
+	 * using the node. Without this the node has no device at
+	 * all and the driver never binds. */
+	status = "okay";
+	clock-frequency = <100000>; /* I2C_BITRATE_STANDARD */
+
+	touch_sensor: cst816t@15 {
+		compatible = "hynitron,cst816s";
+		reg = <0x15>;
+		irq-gpios = <&gpio0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		rst-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+};
+
+/* ---- LVGL pointer input follows the new node. ---- */
+&{/lvgl_pointer_input} {
+	input = <&touch_sensor>;
 };

@@ -1,14 +1,15 @@
 if SHIELD_ESB_NAPE_TOUCHTEST
 
 # Touch bring-up test variant layered on esb_nape_disptest: no
-# Kconfig changes of its own. The devicetree changes (dummy PAW3222
-# sensor and its SPI1 bus disabled and the dummy kscan parked on
-# P1.03, so the parked pins of the disptest layer can no longer
-# hold a touch line in reset; hardware I2C0 moved to the confirmed
-# harness pins P1.02/P1.04; cst816s rst-gpios on P0.03 so the
-# driver pulses TP_RST itself) live in esb_nape_touchtest.overlay,
-# the LVGL button widget is enabled via esb_nape_touchtest.conf,
-# and the test app (hardware I2C scan cross-check + tap screen) is
+# Kconfig changes of its own. v4 mirrors the proven prospector-
+# bridge recipe: the CST816T node moves from i2c0 (old node
+# disabled) to &xiao_i2c (= i2c1, board-default pins SDA=P0.04 /
+# SCL=P0.05) at 100 kHz with irq-gpios (D0) + rst-gpios (D1), the
+# LVGL pointer input is repointed at the new node (all in
+# esb_nape_touchtest.overlay), the driver runs in interrupt mode
+# (esb_nape_touchtest.conf), and the dummy PAW3222 sensor + SPI1
+# bus stay disabled with the dummy kscan parked on P1.03. The
+# test app (hardware I2C scan cross-check + tap screen) is
 # src/touch_test.c. Keyboard name etc. still come from esb_nape_rx.
 
 endif

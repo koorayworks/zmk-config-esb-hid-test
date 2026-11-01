@@ -1,21 +1,23 @@
 /*
- * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v3.
+ * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v4.
  *
- * v1 (hardware I2C scan on the guessed pins) and v2 (GPIO bit-bang
- * scan over four pin pairs, TP_RST driven HIGH by hand) both found
- * zero ACKs, so v3 changes strategy to the production-style setup
- * (see the shield overlay): hardware TWIM on the confirmed harness
- * pins (TP_SDA -> P1.02, TP_SCL -> P1.04) and the CST816S reset line
- * (TP_RST -> P0.03) owned by the Zephyr cst816s driver via
- * rst-gpios, which pulses reset properly at driver init.
+ * v1–v3 all probed i2c0 (hidden pads P1.00/P1.10, then P1.02/P1.04,
+ * polling, then driver-pulsed reset) and never saw a single ACK.
+ * v4 stops guessing and copies the configuration that is proven on
+ * this exact hardware — the user's prospector-bridge firmware:
+ * the CST816T sits on &xiao_i2c, which is i2c1 (board-default pins
+ * SDA=P0.04 / SCL=P0.05 = XIAO D4/D5), at 100 kHz, with the driver
+ * in interrupt mode (irq on D0, reset on D1). See the shield
+ * overlay for the devicetree side.
  *
  * This app only cross-checks and provides the tap target:
  *
- *  - ~4 s after boot, one address scan over the REAL i2c0 device
- *    (TWIM, the same path the driver uses) logs every address that
- *    ACKs. If the driver found the chip, 0x15 must show up here
- *    too; if the driver logged "failed reading chip id" but the
- *    scan ACKs, the chip is alive and the problem is narrower.
+ *  - ~4 s after boot, one address scan over the touch bus (the
+ *    DT bus of the touch_sensor node — i2c1, not a hardcoded i2c0)
+ *    logs every address that ACKs. If the driver found the chip,
+ *    0x15 must show up here too; if the driver logged "failed
+ *    reading chip id" but the scan ACKs, the chip is alive and the
+ *    problem is narrower.
  *
  *  - A screen with a single explicitly styled button is loaded over
  *    the status screen; every press increments the on-screen
@@ -40,7 +42,10 @@
 
 LOG_MODULE_REGISTER(touchtest);
 
-static const struct device *const i2c_bus = DEVICE_DT_GET(DT_NODELABEL(i2c0));
+/* The bus that hosts the touch node (i2c1 via &xiao_i2c in v4) —
+ * never hardcode an instance: v1–v3 scanned i2c0 while the chip
+ * was on i2c1 all along. */
+static const struct device *const i2c_bus = DEVICE_DT_GET(DT_BUS(DT_NODELABEL(touch_sensor)));
 
 /* ---- Hardware I2C scan (system work queue, ~4 s after boot) ---- */
 
@@ -48,7 +53,7 @@ static void scan_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
     if (!device_is_ready(i2c_bus)) {
-        LOG_ERR("TOUCHTEST hwscan: i2c0 not ready");
+        LOG_ERR("TOUCHTEST hwscan: touch bus not ready");
         return;
     }
 
