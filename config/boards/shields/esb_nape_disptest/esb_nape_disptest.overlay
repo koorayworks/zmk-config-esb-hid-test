@@ -66,13 +66,12 @@
 	};
 };
 
-/* ---- Display SPI clock bisect: the panel lights but shows only
- *      static vertical-stripe garbage (the ST7789's uninitialized
- *      GRAM pattern), so init/frame writes are not landing cleanly.
- *      Drop the clock from the base shield's 30 MHz to 8 MHz to test
- *      whether the Scanner harness is the limit. ---- */
+/* ---- Display SPI clock: 20 MHz, the rate prospector-bridge runs
+ *      on identical hardware over the same Scanner harness. (Was
+ *      dropped to 8 MHz during the no-display bisect and left there;
+ *      restored 2026-11-02 as part of the screen-shimmer polish.) ---- */
 &st7789v {
-	mipi-max-frequency = <8000000>;
+	mipi-max-frequency = <20000000>;
 };
 
 /* ---- Disable the XIAO board's default SPI bus (spi2 / xiao_spi).

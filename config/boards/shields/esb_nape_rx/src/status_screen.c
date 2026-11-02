@@ -29,6 +29,7 @@
  * back to the status frame's name, then "KEYBOARD".
  */
 
+#include <stdarg.h>
 #include <string.h>
 
 #include <lvgl.h>
@@ -140,6 +141,44 @@ static lv_obj_t *confirm_title_label;
 /* REGISTER page */
 static lv_obj_t *register_status_label;
 static lv_obj_t *register_confirm_btn;
+
+/* ---- Change-guarded setters for the 500 ms refresh ----
+ * Setting a label's text invalidates its area even when the new text
+ * is identical, so unconditional refresh writes keep the panel
+ * repainting the same pixels twice a second — a likely source of the
+ * visible shimmer on an otherwise static screen. These helpers make
+ * identical writes a no-op. Style/color calls are deliberately NOT
+ * guarded: they carry state (e.g. the link-lost grey recolor) even
+ * when the text happens to stay the same. */
+static void set_label_text_if_changed(lv_obj_t *label, const char *text) {
+    const char *cur = lv_label_get_text(label);
+
+    if (cur == NULL || strcmp(cur, text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
+static void set_label_text_fmt_if_changed(lv_obj_t *label, const char *fmt, ...) {
+    static char buf[64];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    set_label_text_if_changed(label, buf);
+}
+
+/* The battery gauge is a plain object whose width encodes the
+ * charge; cache the last applied width so identical widths do not
+ * re-invalidate it either. */
+static lv_coord_t batt_gauge_applied_w = -1;
+
+static void set_gauge_width_if_changed(lv_obj_t *obj, lv_coord_t w) {
+    if (w != batt_gauge_applied_w) {
+        batt_gauge_applied_w = w;
+        lv_obj_set_width(obj, w);
+    }
+}
 
 static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color, int x, int y) {
     lv_obj_t *label = lv_label_create(parent);
@@ -334,20 +373,20 @@ static void refresh_status_page(void) {
                               LV_PART_MAIN);
 
     uint8_t own = zmk_battery_state_of_charge();
-    lv_label_set_text_fmt(own_batt_label, "%d%%", own);
+    set_label_text_fmt_if_changed(own_batt_label, "%d%%", own);
     lv_obj_set_style_text_color(own_batt_label, lv_color_hex(link_lost ? COL_LOST_MUTE : COL_SUB),
                                 LV_PART_MAIN);
 
     if (!linked) {
-        lv_label_set_text(link_label, "ESB");
+        set_label_text_if_changed(link_label, "ESB");
         lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
-        lv_label_set_text(kb_name_label, "NO LINK");
-        lv_label_set_text(layer_label, "");
-        lv_label_set_text(batt_pct_label, "");
-        lv_obj_set_width(batt_gauge_fg, 0);
-        lv_label_set_text(row_name_label, "KEYBOARD");
+        set_label_text_if_changed(kb_name_label, "NO LINK");
+        set_label_text_if_changed(layer_label, "");
+        set_label_text_if_changed(batt_pct_label, "");
+        set_gauge_width_if_changed(batt_gauge_fg, 0);
+        set_label_text_if_changed(row_name_label, "KEYBOARD");
         lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
-        lv_label_set_text(row_pct_label, "");
+        set_label_text_if_changed(row_pct_label, "");
         for (int i = 0; i < LAYER_COUNT; i++) {
             lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
         }
@@ -360,13 +399,13 @@ static void refresh_status_page(void) {
         lv_obj_set_pos(link_dot, LINK_DOT_X_LOST, 13);
         lv_obj_set_pos(link_label, LINK_LABEL_X_LOST, 10);
         lv_obj_set_style_bg_color(link_dot, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
-        lv_label_set_text(link_label, "NO LINK");
+        set_label_text_if_changed(link_label, "NO LINK");
         lv_obj_set_style_text_color(link_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
 
-        lv_label_set_text(kb_name_label, kb_name);
+        set_label_text_if_changed(kb_name_label, kb_name);
         lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_LOST_MAIN), LV_PART_MAIN);
 
-        lv_label_set_text_fmt(layer_label, "LAYER %d", st.layer);
+        set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
         lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         for (int i = 0; i < LAYER_COUNT; i++) {
             lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
@@ -375,19 +414,19 @@ static void refresh_status_page(void) {
         lv_obj_set_style_text_color(batt_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         if (st.battery == 0xFF) {
-            lv_label_set_text(batt_pct_label, "--%");
-            lv_obj_set_width(batt_gauge_fg, 0);
-            lv_label_set_text(row_pct_label, "--%");
+            set_label_text_if_changed(batt_pct_label, "--%");
+            set_gauge_width_if_changed(batt_gauge_fg, 0);
+            set_label_text_if_changed(row_pct_label, "--%");
         } else {
-            lv_label_set_text_fmt(batt_pct_label, "%d%%", st.battery);
-            lv_obj_set_width(batt_gauge_fg, 208 * st.battery / 100);
+            set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
+            set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
             lv_obj_set_style_bg_color(batt_gauge_fg, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
-            lv_label_set_text_fmt(row_pct_label, "%d%%", st.battery);
+            set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
         }
 
         lv_obj_set_style_border_color(row_radio, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         lv_obj_set_style_bg_color(row_radio, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
-        lv_label_set_text(row_name_label, kb_name);
+        set_label_text_if_changed(row_name_label, kb_name);
         lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         return;
     }
@@ -400,7 +439,7 @@ static void refresh_status_page(void) {
     lv_obj_set_style_text_color(batt_pct_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
 
-    lv_label_set_text(kb_name_label, kb_name);
+    set_label_text_if_changed(kb_name_label, kb_name);
 
     /* Output-mode indication. Amber stays reserved for "the ESB link
      * is carrying the keyboard's output" (link dot + list-row ring).
@@ -417,26 +456,26 @@ static void refresh_status_page(void) {
                               LV_PART_MAIN);
     switch (st.output) {
     case ESB_HID_STATUS_OUTPUT_USB:
-        lv_label_set_text(link_label, "USB");
+        set_label_text_if_changed(link_label, "USB");
         lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
         break;
     case ESB_HID_STATUS_OUTPUT_BLE:
-        lv_label_set_text(link_label, "BLE");
+        set_label_text_if_changed(link_label, "BLE");
         lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
         break;
     case ESB_HID_STATUS_OUTPUT_NONE:
-        lv_label_set_text(link_label, "NONE");
+        set_label_text_if_changed(link_label, "NONE");
         lv_obj_set_style_text_color(link_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
         break;
     default: /* ESB_HID_STATUS_OUTPUT_ESB */
-        lv_label_set_text(link_label, "ESB");
+        set_label_text_if_changed(link_label, "ESB");
         lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
         break;
     }
 
     uint8_t layer = st.layer < LAYER_COUNT ? st.layer : 0;
     uint32_t lcol = layer_colors[layer];
-    lv_label_set_text_fmt(layer_label, "LAYER %d", st.layer);
+    set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
     lv_obj_set_style_text_color(layer_label, lv_color_hex(lcol), LV_PART_MAIN);
     for (int i = 0; i < LAYER_COUNT; i++) {
         lv_obj_set_style_bg_color(layer_dots[i],
@@ -444,18 +483,18 @@ static void refresh_status_page(void) {
     }
 
     if (st.battery == 0xFF) {
-        lv_label_set_text(batt_pct_label, "--%");
-        lv_obj_set_width(batt_gauge_fg, 0);
-        lv_label_set_text(row_pct_label, "--%");
+        set_label_text_if_changed(batt_pct_label, "--%");
+        set_gauge_width_if_changed(batt_gauge_fg, 0);
+        set_label_text_if_changed(row_pct_label, "--%");
     } else {
-        lv_label_set_text_fmt(batt_pct_label, "%d%%", st.battery);
-        lv_obj_set_width(batt_gauge_fg, 208 * st.battery / 100);
+        set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
+        set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
         lv_obj_set_style_bg_color(batt_gauge_fg,
                                   lv_color_hex(st.battery <= 20 ? COL_ALERT : 0xE8E8EA),
                                   LV_PART_MAIN);
-        lv_label_set_text_fmt(row_pct_label, "%d%%", st.battery);
+        set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
     }
-    lv_label_set_text(row_name_label, kb_name);
+    set_label_text_if_changed(row_name_label, kb_name);
     lv_obj_set_style_text_color(row_name_label, lv_color_white(), LV_PART_MAIN);
 }
 
@@ -472,17 +511,18 @@ static void refresh_keyboards_page(void) {
                                   lv_color_hex(ok && info.link_up ? COL_GREEN : COL_DOT_OFF),
                                   LV_PART_MAIN);
         if (ok) {
-            lv_label_set_text(slot_name_label[i], info.name[0] != '\0' ? info.name : "KEYBOARD");
+            set_label_text_if_changed(slot_name_label[i],
+                                      info.name[0] != '\0' ? info.name : "KEYBOARD");
             lv_obj_set_style_text_color(slot_name_label[i], lv_color_white(), LV_PART_MAIN);
             if (info.battery == 0xFF) {
-                lv_label_set_text(slot_pct_label[i], "--");
+                set_label_text_if_changed(slot_pct_label[i], "--");
             } else {
-                lv_label_set_text_fmt(slot_pct_label[i], "%d%%", info.battery);
+                set_label_text_fmt_if_changed(slot_pct_label[i], "%d%%", info.battery);
             }
         } else {
-            lv_label_set_text(slot_name_label[i], "EMPTY");
+            set_label_text_if_changed(slot_name_label[i], "EMPTY");
             lv_obj_set_style_text_color(slot_name_label[i], lv_color_hex(COL_MUTE), LV_PART_MAIN);
-            lv_label_set_text(slot_pct_label[i], "--");
+            set_label_text_if_changed(slot_pct_label[i], "--");
         }
         if (i == active && ok) {
             lv_obj_clear_flag(slot_active_label[i], LV_OBJ_FLAG_HIDDEN);
@@ -508,33 +548,33 @@ static void refresh_detail_page(void) {
     bool is_active = detail_slot == esb_hid_rx_get_active_slot();
 
     if (!used) {
-        lv_label_set_text(detail_name_label, "EMPTY SLOT");
+        set_label_text_if_changed(detail_name_label, "EMPTY SLOT");
         lv_obj_set_style_text_font(detail_name_label, &lv_font_montserrat_20, LV_PART_MAIN);
-        lv_label_set_text(detail_batt_label, "Battery --");
-        lv_label_set_text(detail_layer_label, "Layer --");
-        lv_label_set_text(detail_link_label, "--");
-        lv_label_set_text(detail_output_label, "Output --");
+        set_label_text_if_changed(detail_batt_label, "Battery --");
+        set_label_text_if_changed(detail_layer_label, "Layer --");
+        set_label_text_if_changed(detail_link_label, "--");
+        set_label_text_if_changed(detail_output_label, "Output --");
         set_hidden(detail_switch_btn, true);
         set_hidden(detail_delete_btn, true);
         set_hidden(detail_register_btn, false);
         return;
     }
 
-    lv_label_set_text(detail_name_label, info.name[0] != '\0' ? info.name : "KEYBOARD");
+    set_label_text_if_changed(detail_name_label, info.name[0] != '\0' ? info.name : "KEYBOARD");
     lv_obj_set_style_text_font(detail_name_label, &lv_font_montserrat_28, LV_PART_MAIN);
     if (info.battery == 0xFF) {
-        lv_label_set_text(detail_batt_label, "Battery --");
+        set_label_text_if_changed(detail_batt_label, "Battery --");
     } else {
-        lv_label_set_text_fmt(detail_batt_label, "Battery %d%%", info.battery);
+        set_label_text_fmt_if_changed(detail_batt_label, "Battery %d%%", info.battery);
     }
     if (info.status_valid) {
-        lv_label_set_text_fmt(detail_layer_label, "Layer %d", info.layer);
-        lv_label_set_text_fmt(detail_output_label, "Output %s", output_name(info.output));
+        set_label_text_fmt_if_changed(detail_layer_label, "Layer %d", info.layer);
+        set_label_text_fmt_if_changed(detail_output_label, "Output %s", output_name(info.output));
     } else {
-        lv_label_set_text(detail_layer_label, "Layer --");
-        lv_label_set_text(detail_output_label, "Output --");
+        set_label_text_if_changed(detail_layer_label, "Layer --");
+        set_label_text_if_changed(detail_output_label, "Output --");
     }
-    lv_label_set_text(detail_link_label, info.link_up ? "LINKED" : "NO LINK");
+    set_label_text_if_changed(detail_link_label, info.link_up ? "LINKED" : "NO LINK");
     lv_obj_set_style_text_color(detail_link_label,
                                 lv_color_hex(info.link_up ? COL_GREEN : COL_ALERT), LV_PART_MAIN);
 
@@ -542,8 +582,8 @@ static void refresh_detail_page(void) {
     set_hidden(detail_delete_btn, false);
     set_hidden(detail_register_btn, true);
 
-    lv_label_set_text_fmt(confirm_title_label, "Delete %s?",
-                          info.name[0] != '\0' ? info.name : "KEYBOARD");
+    set_label_text_fmt_if_changed(confirm_title_label, "Delete %s?",
+                                  info.name[0] != '\0' ? info.name : "KEYBOARD");
 }
 
 /* ---- Refresh: REGISTER page ---- */
@@ -552,7 +592,7 @@ static void refresh_register_page(void) {
     struct esb_hid_pairing_status ps;
 
     if (esb_hid_pairing_get_status(&ps) != 0) {
-        lv_label_set_text(register_status_label, "Searching...");
+        set_label_text_if_changed(register_status_label, "Searching...");
         style_button(register_confirm_btn, COL_LINE, COL_MUTE);
         return;
     }
@@ -564,19 +604,19 @@ static void refresh_register_page(void) {
     switch (ps.state) {
     case ESB_HID_PAIRING_SEARCHING:
         if (ps.remaining_ms > 0) {
-            lv_label_set_text_fmt(register_status_label, "Searching... %ds",
-                                  (int)(ps.remaining_ms / 1000));
+            set_label_text_fmt_if_changed(register_status_label, "Searching... %ds",
+                                          (int)(ps.remaining_ms / 1000));
         } else {
-            lv_label_set_text(register_status_label, "Searching...");
+            set_label_text_if_changed(register_status_label, "Searching...");
         }
         style_button(register_confirm_btn, COL_LINE, COL_MUTE);
         break;
     case ESB_HID_PAIRING_CANDIDATE:
-        lv_label_set_text_fmt(register_status_label, "Found: %s", ps.candidate_name);
+        set_label_text_fmt_if_changed(register_status_label, "Found: %s", ps.candidate_name);
         style_button(register_confirm_btn, COL_AMBER, 0x000000);
         break;
     case ESB_HID_PAIRING_ASSIGNING:
-        lv_label_set_text(register_status_label, "Registering...");
+        set_label_text_if_changed(register_status_label, "Registering...");
         style_button(register_confirm_btn, COL_LINE, COL_MUTE);
         break;
     case ESB_HID_PAIRING_DONE: {
@@ -592,8 +632,8 @@ static void refresh_register_page(void) {
                 LOG_WRN("auto-switch to registered slot %u failed (%d)", ps.target_slot, err);
             }
         }
-        lv_label_set_text(register_status_label,
-                          register_switch_ok ? "Registered - ACTIVE" : "Registered");
+        set_label_text_if_changed(register_status_label,
+                                  register_switch_ok ? "Registered - ACTIVE" : "Registered");
         style_button(register_confirm_btn, COL_LINE, COL_MUTE);
         if (register_done_ms == 0) {
             register_done_ms = k_uptime_get();
@@ -617,7 +657,7 @@ static void refresh_register_page(void) {
             register_was_active = false;
             show_page(PAGE_DETAIL);
         } else {
-            lv_label_set_text(register_status_label, "Searching...");
+            set_label_text_if_changed(register_status_label, "Searching...");
             style_button(register_confirm_btn, COL_LINE, COL_MUTE);
         }
         break;
