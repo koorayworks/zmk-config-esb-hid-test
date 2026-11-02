@@ -405,7 +405,11 @@ static void refresh_status_page(void) {
         set_label_text_if_changed(kb_name_label, kb_name);
         lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_LOST_MAIN), LV_PART_MAIN);
 
-        set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
+        if (st.layer_name[0] != '\0') {
+            set_label_text_if_changed(layer_label, st.layer_name);
+        } else {
+            set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
+        }
         lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
         for (int i = 0; i < LAYER_COUNT; i++) {
             lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
@@ -475,7 +479,11 @@ static void refresh_status_page(void) {
 
     uint8_t layer = st.layer < LAYER_COUNT ? st.layer : 0;
     uint32_t lcol = layer_colors[layer];
-    set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
+    if (st.layer_name[0] != '\0') {
+        set_label_text_if_changed(layer_label, st.layer_name);
+    } else {
+        set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
+    }
     lv_obj_set_style_text_color(layer_label, lv_color_hex(lcol), LV_PART_MAIN);
     for (int i = 0; i < LAYER_COUNT; i++) {
         lv_obj_set_style_bg_color(layer_dots[i],
@@ -568,7 +576,11 @@ static void refresh_detail_page(void) {
         set_label_text_fmt_if_changed(detail_batt_label, "Battery %d%%", info.battery);
     }
     if (info.status_valid) {
-        set_label_text_fmt_if_changed(detail_layer_label, "Layer %d", info.layer);
+        if (info.layer_name[0] != '\0') {
+            set_label_text_if_changed(detail_layer_label, info.layer_name);
+        } else {
+            set_label_text_fmt_if_changed(detail_layer_label, "Layer %d", info.layer);
+        }
         set_label_text_fmt_if_changed(detail_output_label, "Output %s", output_name(info.output));
     } else {
         set_label_text_if_changed(detail_layer_label, "Layer --");
@@ -700,15 +712,15 @@ static lv_obj_t *make_page(lv_obj_t *stage) {
 
 static void build_status_page(lv_obj_t *page) {
     /* Top row: brand / own battery / link state. */
-    lv_obj_t *brand = make_label(page, &lv_font_montserrat_12, COL_MUTE, 16, 10);
+    lv_obj_t *brand = make_label(page, &lv_font_montserrat_12, 0xE8E8EA, 16, 10);
     lv_label_set_text(brand, "NAPE DECK");
     lv_obj_set_style_text_letter_space(brand, 3, LV_PART_MAIN);
 
-    own_batt_label = make_label(page, &lv_font_montserrat_12, COL_SUB, 150, 10);
+    own_batt_label = make_label(page, &lv_font_montserrat_12, 0xFFFFFF, 150, 10);
     lv_label_set_text(own_batt_label, "--%");
 
     link_dot = make_dot(page, LINK_DOT_X, 13, 6, COL_DOT_OFF);
-    link_label = make_label(page, &lv_font_montserrat_12, COL_SUB, LINK_LABEL_X, 10);
+    link_label = make_label(page, &lv_font_montserrat_12, 0xFFFFFF, LINK_LABEL_X, 10);
     lv_label_set_text(link_label, "ESB");
 
     /* Hero: keyboard name + layer. */
@@ -749,7 +761,7 @@ static void build_status_page(lv_obj_t *page) {
     lv_obj_set_style_bg_opa(hr, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(hr, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *sect = make_label(page, &lv_font_montserrat_12, COL_MUTE, 16, 154);
+    lv_obj_t *sect = make_label(page, &lv_font_montserrat_12, 0xE8E8EA, 16, 154);
     lv_label_set_text(sect, "KEYBOARDS");
     lv_obj_set_style_text_letter_space(sect, 3, LV_PART_MAIN);
 
@@ -765,7 +777,7 @@ static void build_status_page(lv_obj_t *page) {
 
     row_name_label = make_label(page, &lv_font_montserrat_14, 0xFFFFFF, 34, 178);
     lv_label_set_text(row_name_label, "KEYBOARD");
-    row_pct_label = make_label(page, &lv_font_montserrat_12, COL_SUB, 196, 179);
+    row_pct_label = make_label(page, &lv_font_montserrat_12, 0xFFFFFF, 196, 179);
 }
 
 static void build_keyboards_page(lv_obj_t *page) {
@@ -789,7 +801,7 @@ static void build_keyboards_page(lv_obj_t *page) {
         lv_label_set_text(slot_name_label[i], "EMPTY");
         slot_active_label[i] = make_label(row, &lv_font_montserrat_12, COL_AMBER, 16, 24);
         lv_label_set_text(slot_active_label[i], "ACTIVE");
-        slot_pct_label[i] = make_label(row, &lv_font_montserrat_12, COL_SUB, 176, 5);
+        slot_pct_label[i] = make_label(row, &lv_font_montserrat_12, 0xFFFFFF, 176, 5);
         lv_label_set_text(slot_pct_label[i], "--");
     }
 }
@@ -798,10 +810,10 @@ static void build_detail_page(lv_obj_t *page) {
     detail_name_label = make_label(page, &lv_font_montserrat_28, 0xFFFFFF, 16, 10);
     lv_label_set_text(detail_name_label, "EMPTY SLOT");
 
-    detail_batt_label = make_label(page, &lv_font_montserrat_14, COL_SUB, 16, 58);
-    detail_layer_label = make_label(page, &lv_font_montserrat_14, COL_SUB, 16, 82);
-    detail_link_label = make_label(page, &lv_font_montserrat_14, COL_SUB, 16, 106);
-    detail_output_label = make_label(page, &lv_font_montserrat_14, COL_SUB, 16, 130);
+    detail_batt_label = make_label(page, &lv_font_montserrat_14, 0xFFFFFF, 16, 58);
+    detail_layer_label = make_label(page, &lv_font_montserrat_14, 0xFFFFFF, 16, 82);
+    detail_link_label = make_label(page, &lv_font_montserrat_14, 0xFFFFFF, 16, 106);
+    detail_output_label = make_label(page, &lv_font_montserrat_14, 0xFFFFFF, 16, 130);
 
     detail_switch_btn = make_button(page, "SWITCH", 16, 158, 64, 36, COL_LINE, 0xFFFFFF,
                                     detail_switch_cb, NULL);
@@ -818,7 +830,7 @@ static void build_confirm_page(lv_obj_t *page) {
     lv_label_set_long_mode(confirm_title_label, LV_LABEL_LONG_WRAP);
     lv_label_set_text(confirm_title_label, "Delete?");
 
-    lv_obj_t *warn = make_label(page, &lv_font_montserrat_12, COL_MUTE, 16, 62);
+    lv_obj_t *warn = make_label(page, &lv_font_montserrat_12, 0xE8E8EA, 16, 62);
     lv_label_set_text(warn, "The keyboard must register again to reconnect.");
 
     make_button(page, "DELETE", 16, 110, 96, 40, COL_ALERT, 0xFFFFFF, confirm_delete_cb, NULL);
@@ -829,7 +841,7 @@ static void build_register_page(lv_obj_t *page) {
     lv_obj_t *title = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 10);
     lv_label_set_text(title, "REGISTER");
 
-    lv_obj_t *hint = make_label(page, &lv_font_montserrat_12, COL_MUTE, 16, 44);
+    lv_obj_t *hint = make_label(page, &lv_font_montserrat_12, 0xE8E8EA, 16, 44);
     lv_obj_set_width(hint, 208);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint, "Press the pairing key on the keyboard.");
