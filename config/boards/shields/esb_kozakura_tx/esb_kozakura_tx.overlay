@@ -26,6 +26,16 @@
         zmk,physical-layout = <&physical_layout0>;
     };
 
+    behaviors {
+        /* Step 2: opens the receiver's pairing window for this
+         * keyboard's slot (CONFIG_ZMK_ESB_HID_SLOT) so the Deck can
+         * (re)register it. Bound in the keymap on layer 4. */
+        esb_pair: esb_pair {
+            compatible = "zmk,behavior-esb-pair";
+            #binding-cells = <0>;
+        };
+    };
+
     kscan0: kscan {
         compatible = "zmk,kscan-gpio-matrix";
         debounce-press-ms = <10>;

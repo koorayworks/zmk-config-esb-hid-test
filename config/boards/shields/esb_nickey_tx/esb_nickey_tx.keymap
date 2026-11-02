@@ -7,6 +7,8 @@
  *   layer's inner key is &trans here.
  * - &jp_hanzen / &jp_at come from a jpkeys behavior file that is
  *   not part of this config; substituted with GRAVE / LS(NUMBER_2).
+ * - Step 2: layer 1 (Number) position 6 is &esb_pair, which opens
+ *   the receiver pairing window for slot 1.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -32,7 +34,7 @@
             display-name = "Number";
             bindings = <
                 &kp ESCAPE  &kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp NUMBER_4  &kp NUMBER_5
-                &trans      &kp F1        &kp F2        &kp F3        &kp F4        &kp F5
+                &esb_pair   &kp F1        &kp F2        &kp F3        &kp F4        &kp F5
                 &trans      &kp F6        &kp F7        &kp F8        &kp F9        &kp F10      &trans
                                                             &trans  &trans  &trans
             >;

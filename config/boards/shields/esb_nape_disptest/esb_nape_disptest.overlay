@@ -15,15 +15,25 @@
  *                          RESET=D3(P0.29)
  *                          BL=D6(P1.11), PWM1 ch0, inverted
  *
- * Only the display is connected on this unit (no trackball sensor, no
- * touch panel), so the PAW3222 sensor — whose SPI1 pins (D8/D9/D10)
- * collide with the Prospector display wiring — is moved to dummy
- * unconnected pins below instead of being disabled (ZMK's input
- * listener references its DT node, so the node must stay enabled).
+ * The display is wired Prospector-style (above). The PAW3222 sensor
+ * — whose SPI1 pins (D8/D9/D10) collide with that display wiring —
+ * is disabled outright below, together with its SPI1 bus (SPIM1
+ * shares the 0x40004000 instance with TWIM1, so disabling it also
+ * frees the peripheral for the touch bus).
+ *
+ * Touch (Step 2 production integration, moved here from
+ * esb_nape_touchtest v4, which proved this recipe on this hardware —
+ * it mirrors the user's prospector-bridge firmware): the CST816T
+ * sits on &xiao_i2c, which in this Zephyr tree is i2c1 (board-default
+ * pins SDA=P0.04 / SCL=P0.05 = XIAO D4/D5, exactly where the Scanner
+ * harness lands TP_SDA/TP_SCL), at 100 kHz, in interrupt mode
+ * (irq-gpios TP_IRQ -> D0 = P0.02, rst-gpios TP_RST -> D1 = P0.03;
+ * see esb_nape_disptest.conf for CONFIG_INPUT_CST816S_INTERRUPT=y).
+ * The old CST816S node esb_nape_rx puts on i2c0 is disabled and the
+ * LVGL pointer input is repointed at the new node.
  *
  * Panel parameters (size, offsets, mdac, init values) are NOT touched
- * here; they remain whatever esb_nape_rx defines. Touch (CST816S on
- * I2C0) is likewise left as esb_nape_rx defines it.
+ * here; they remain whatever esb_nape_rx defines.
  */
 
 /* ---- Display SPI3 pinctrl: SCK P0.03->P1.13, MOSI P0.29->P1.15 ---- */
@@ -116,58 +126,70 @@
 	pwms = <&pwm1 0 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
 };
 
-/* ---- Trackball PAW3222: DUMMY PINS (display-only test unit).
- *      The sensor is not connected. Its real pins (SPI1 SCK=D8,
- *      SDIO=D10, CS=D9, MOTION=D0) collide with the Prospector display
- *      wiring above, so park the bus/lines on pins that are
- *      unconnected in the display-only wiring:
- *        SCK=D1(P0.03) SDIO=D2(P0.28) CS=D0(P0.02) MOTION=P0.31
- *      CS/MOTION must stay off D4/D5 (the earlier dummy choice):
- *      those are kscan key inputs. P0.31 is a real nRF52840 GPIO
- *      that is not broken out on the XIAO, so the irq line is
- *      guaranteed unconnected.
- *      The node stays enabled on purpose — see header comment. ---- */
-&spi1_tb_default {
-	group1 {
-		psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
-			<NRF_PSEL(SPIM_MOSI, 0, 28)>,
-			<NRF_PSEL(SPIM_MISO, 0, 28)>;
-	};
-};
-
-&spi1_tb_sleep {
-	group1 {
-		psels = <NRF_PSEL(SPIM_SCK, 0, 3)>,
-			<NRF_PSEL(SPIM_MOSI, 0, 28)>,
-			<NRF_PSEL(SPIM_MISO, 0, 28)>;
-		/* low-power-enable stays from the esb_nape_rx definition. */
-	};
+/* ---- Trackball PAW3222: DISABLED on this unit.
+ *      The sensor is not connected, and its real pins (SPI1 SCK=D8,
+ *      SDIO=D10, CS=D9, MOTION=D0) collide with the Prospector
+ *      display wiring above. Disable the sensor and its bus
+ *      outright (the touchtest v4 approach, proven on hardware):
+ *      SPIM1 shares its peripheral instance with TWIM1, so this
+ *      also frees instance 1 for the touch I2C bus below. ---- */
+&paw3222 {
+	status = "disabled";
 };
 
 &spi1 {
-	cs-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
+	status = "disabled";
 };
 
-&paw3222 {
-	irq-gpios = <&gpio0 31 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-};
-
-/* ---- Local keys: PARKED (display-only test unit).
+/* ---- Local keys: PARKED.
  *      No physical keys are connected, so the base shield's kscan
  *      inputs (D4/D5/D6) float with pull-ups. D6 (P1.11) is worse:
  *      in this variant it is also the backlight PWM output, and
  *      key 3 is bound to &mkp MCLK — the contested, toggling line
- *      produced phantom middle clicks on the host. Park all three
- *      kscan inputs on GPIOs that are not broken out on the XIAO
- *      and claimed by nothing else in this build (verified in the
- *      generated devicetree), so they can never generate key
- *      events in the display-test build: P1.02, P1.03, P1.04.
- *      (P0.30 is the XIAO's onboard green LED and P0.31 is already
- *      the parked PAW3222 irq line, so neither qualifies.)
+ *      produced phantom middle clicks on the host. D4/D5 are now
+ *      also the touch I2C lines. Park all three kscan inputs on a
+ *      single GPIO that is not broken out on the XIAO and claimed
+ *      by nothing else in this build, P1.03, so they can never
+ *      generate key events (the touchtest v4 parking; the kscan
+ *      node itself cannot be disabled — zmk's physical_layouts.c
+ *      takes DEVICE_DT_GET(DT_CHOSEN(zmk_kscan)) unconditionally).
  *      The production esb_nape_rx keymap/kscan are untouched. ---- */
 &kscan {
 	input-gpios =
-		<&gpio1 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
 		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
-		<&gpio1 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+};
+
+/* ---- The old touch node on i2c0 (esb_nape_rx) is replaced. ---- */
+&cst816s {
+	status = "disabled";
+};
+
+/* ---- Touch: CST816T on &xiao_i2c (i2c1), mirroring
+ *      prospector-bridge config/xiao_ble.overlay. The bridge
+ *      expresses the GPIOs via &xiao_d (D0/D1); the connector map
+ *      resolves those to gpio0 2 / gpio0 3, which is what the rest
+ *      of our overlays use directly. ---- */
+&xiao_i2c {
+	/* The board stack leaves i2c1 disabled (esb_nape_rx turns it
+	 * off for the trackball SPIM1, and ZMK's xiao_ble turns unused
+	 * peripherals off); the bridge build enables it by using the
+	 * node. Without this the node has no device at all and the
+	 * driver never binds. */
+	status = "okay";
+	clock-frequency = <100000>; /* I2C_BITRATE_STANDARD */
+
+	touch_sensor: cst816t@15 {
+		compatible = "hynitron,cst816s";
+		reg = <0x15>;
+		irq-gpios = <&gpio0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		rst-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+};
+
+/* ---- LVGL pointer input follows the new node. ---- */
+&{/lvgl_pointer_input} {
+	input = <&touch_sensor>;
 };

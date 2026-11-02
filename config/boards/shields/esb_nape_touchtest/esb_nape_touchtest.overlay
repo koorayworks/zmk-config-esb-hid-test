@@ -5,87 +5,17 @@
  *
  *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest;esb_nape_touchtest"
  *
- * v1–v3 all probed the WRONG bus. They put the CST816S on i2c0 with
- * custom pinctrl — first the XIAO hidden pads (P1.00/P1.10), then
- * P1.02/P1.04 — and never got a single ACK, even with the dummy
- * nodes unparked (v2) and the driver pulsing TP_RST itself (v3).
+ * Step 2 dedupe: the touch devicetree that v4 introduced here —
+ * PAW3222 + SPI1 disabled, kscan parked on P1.03, the old i2c0
+ * CST816S node disabled, the CST816T node on &xiao_i2c (i2c1,
+ * 100 kHz, irq on D0 / reset on D1) and the LVGL pointer input
+ * repointing — moved down into esb_nape_disptest.overlay, which is
+ * now the production Deck layer. This overlay therefore defines NO
+ * nodes of its own anymore; touch reaches this build through the
+ * disptest layer underneath.
  *
- * v4 copies the one configuration that is PROVEN on this exact
- * hardware: the user's own prospector-bridge firmware
- * (config/xiao_ble.overlay), where touch works. Its recipe:
- *
- *  - The touch controller (a CST816T, driven as "hynitron,cst816s")
- *    sits on the XIAO connector I2C, &xiao_i2c — which in this
- *    Zephyr tree is **i2c1**, not i2c0. The board's default i2c1
- *    pinctrl is SDA=P0.04 / SCL=P0.05, i.e. exactly the D4/D5 pins
- *    the Scanner harness lands TP_SDA/TP_SCL on (see the xiao_d
- *    gpio-map in seeed_xiao_connector.dtsi: D4->gpio0 4, D5->gpio0
- *    5). No custom pinctrl is needed or wanted.
- *
- *  - Bus clock is 100 kHz (I2C_BITRATE_STANDARD), not 400 kHz.
- *
- *  - The driver runs in INTERRUPT mode (conf:
- *    CONFIG_INPUT_CST816S_INTERRUPT=y) with irq-gpios on
- *    TP_IRQ -> D0 = P0.02 and rst-gpios on TP_RST -> D1 = P0.03.
- *    All previous Deck variants used polling with no irq line.
- *
- * The old cst816s node that esb_nape_rx puts on i2c0 is disabled,
- * the new node takes its place on i2c1 under the bridge's own label
- * (touch_sensor), and the LVGL pointer input is repointed at it.
- *
- * The v2 unparking stays: the PAW3222 node and its SPI1 bus are
- * disabled outright (SPIM1 shares the 0x40004000 instance with
- * TWIM1, so this also frees the peripheral for i2c1), and the dummy
- * kscan inputs stay parked on P1.03 alone (the kscan node cannot
- * be disabled: zmk's physical_layouts.c takes
- * DEVICE_DT_GET(DT_CHOSEN(zmk_kscan)) unconditionally).
- *
- * Nothing else changes: display and backlight stay exactly as the
- * disptest layer defines them.
+ * What stays unique to this shield: the bring-up app in src/
+ * (hardware I2C scan cross-check + tap counter / test-pattern
+ * screens) and the LVGL widget extras in esb_nape_touchtest.conf
+ * (LV_USE_BUTTON / LV_USE_CANVAS).
  */
-
-&paw3222 {
-	status = "disabled";
-};
-
-&spi1 {
-	status = "disabled";
-};
-
-&kscan {
-	input-gpios =
-		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
-		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
-		<&gpio1 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-};
-
-/* ---- The old touch node on i2c0 (esb_nape_rx) is replaced. ---- */
-&cst816s {
-	status = "disabled";
-};
-
-/* ---- Touch, mirroring prospector-bridge config/xiao_ble.overlay.
- *      The bridge expresses the GPIOs via &xiao_d (D0/D1); the
- *      connector map resolves those to gpio0 2 / gpio0 3, which is
- *      what the rest of our overlays use directly. ---- */
-&xiao_i2c {
-	/* The board stack leaves i2c1 disabled (ZMK's xiao_ble turns
-	 * unused peripherals off); the bridge build enables it by
-	 * using the node. Without this the node has no device at
-	 * all and the driver never binds. */
-	status = "okay";
-	clock-frequency = <100000>; /* I2C_BITRATE_STANDARD */
-
-	touch_sensor: cst816t@15 {
-		compatible = "hynitron,cst816s";
-		reg = <0x15>;
-		irq-gpios = <&gpio0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-		rst-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
-		status = "okay";
-	};
-};
-
-/* ---- LVGL pointer input follows the new node. ---- */
-&{/lvgl_pointer_input} {
-	input = <&touch_sensor>;
-};

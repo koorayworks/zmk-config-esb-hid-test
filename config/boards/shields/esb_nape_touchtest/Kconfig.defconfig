@@ -1,15 +1,15 @@
 if SHIELD_ESB_NAPE_TOUCHTEST
 
 # Touch bring-up test variant layered on esb_nape_disptest: no
-# Kconfig changes of its own. v4 mirrors the proven prospector-
-# bridge recipe: the CST816T node moves from i2c0 (old node
-# disabled) to &xiao_i2c (= i2c1, board-default pins SDA=P0.04 /
-# SCL=P0.05) at 100 kHz with irq-gpios (D0) + rst-gpios (D1), the
-# LVGL pointer input is repointed at the new node (all in
-# esb_nape_touchtest.overlay), the driver runs in interrupt mode
-# (esb_nape_touchtest.conf), and the dummy PAW3222 sensor + SPI1
-# bus stay disabled with the dummy kscan parked on P1.03. The
-# test app (hardware I2C scan cross-check + tap screen) is
-# src/touch_test.c. Keyboard name etc. still come from esb_nape_rx.
+# Kconfig changes of its own. Since the Step 2 dedupe, the touch
+# devicetree (CST816T on &xiao_i2c / i2c1 at 100 kHz, irq D0 /
+# reset D1, PAW3222 + SPI1 disabled, kscan parked on P1.03) and
+# the driver's interrupt mode come from the disptest layer
+# (esb_nape_disptest.overlay / .conf); this shield's overlay
+# defines no nodes. What remains here is the test app (hardware
+# I2C scan cross-check + tap / test-pattern screens,
+# src/touch_test.c) and the LVGL widget extras in
+# esb_nape_touchtest.conf. Keyboard name etc. still come from
+# esb_nape_rx.
 
 endif

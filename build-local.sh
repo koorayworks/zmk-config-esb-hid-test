@@ -21,12 +21,18 @@ ZMK_APP="${ZMK_APP:-$PWD/zmk/app}"
 
 # Nickey TX: real Nickey left-half PCB as a standalone ESB TX
 # (re-enabled 2026-10-31 for the Step 2 multi-device work).
-west build -p -s "$ZMK_APP" -b "$BOARD" -d build/nickey-tx -- \
+# Uses the xiao_ble//zmk board extension like TentAlice/Nape: the
+# plain xiao_ble/nrf52840 configuration has no FLASH partition for
+# settings, so the module's SETTINGS backend fell back to NONE and a
+# pairing-assigned slot would not persist across reboots (Step 2
+# follow-up, verified: //zmk yields CONFIG_SETTINGS_NVS=y).
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nickey-tx -- \
   -DSHIELD=esb_nickey_tx -DZMK_CONFIG="$PWD/config"
 
 # koZakura TX: real koZakura48 left-half PCB as a standalone ESB TX
 # (added 2026-10-31 for the Step 2 multi-device work).
-west build -p -s "$ZMK_APP" -b "$BOARD" -d build/kozakura-tx -- \
+# Same xiao_ble//zmk rationale as Nickey above (NVS persistence).
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/kozakura-tx -- \
   -DSHIELD=esb_kozakura_tx -DZMK_CONFIG="$PWD/config"
 
 # TentAlice uses the xiao_ble//zmk board extension (like the original
@@ -40,15 +46,17 @@ west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/tentalice-tx -- \
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-rx -- \
   -DSHIELD=esb_nape_rx -DZMK_CONFIG="$PWD/config"
 
-# Nape display test: esb_nape_rx + esb_nape_disptest layered on top.
-# The test unit wires the display like the Prospector adapter and has
-# no sensor/touch connected (sensor parked on dummy pins).
+# Nape Deck production build: esb_nape_rx + esb_nape_disptest layered
+# on top. The unit wires the display like the Prospector adapter; the
+# trackball sensor is disabled (its pins collide with the display)
+# and the CST816T touch panel is integrated on i2c1 (Step 2).
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-disptest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest" -DZMK_CONFIG="$PWD/config"
 
 # Nape touch test: disptest + esb_nape_touchtest layered on top.
-# Moves the CST816S to the Scanner harness pins (SDA=P1.02/SCL=P1.04)
-# and adds an I2C bus scan + on-screen tap counter for bring-up.
+# Touch itself now comes from the disptest layer; this shield only
+# adds an I2C bus scan + on-screen tap counter / test pattern for
+# bring-up.
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-touchtest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest" -DZMK_CONFIG="$PWD/config"
 

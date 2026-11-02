@@ -14,6 +14,8 @@
  *   &trans (this build has no BLE endpoints). The original's first
  *   &out position (layer 5 row 1, &out OUT_BLE) now holds
  *   &out OUT_TOG, which cycles USB <-> ESB in this dual-mode build.
+ * - Step 2: layer 5 position 1 (next to &out OUT_TOG) is &esb_pair,
+ *   which opens the receiver pairing window for slot 0.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -315,7 +317,7 @@
 
         layer_5 {
             bindings = <
-                &out OUT_TOG  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
+                &out OUT_TOG  &esb_pair  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &trans  &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans  &trans  &trans
                 &trans  &bootloader   &trans        &trans        &bootloader   &trans

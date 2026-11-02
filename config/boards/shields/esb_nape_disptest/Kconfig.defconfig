@@ -1,8 +1,11 @@
 if SHIELD_ESB_NAPE_DISPTEST
 
-# Layered display-test variant of esb_nape_rx: no Kconfig changes of
-# its own. It only carries a devicetree overlay that remaps the display
-# to the Prospector adapter pinout (see esb_nape_disptest.overlay).
-# Keyboard name etc. still come from esb_nape_rx.
+# Layered variant of esb_nape_rx: no Kconfig changes of its own. It
+# carries a devicetree overlay that remaps the display to the
+# Prospector adapter pinout and (Step 2) hosts the production CST816T
+# touch integration (see esb_nape_disptest.overlay), plus a .conf
+# fragment enabling the touch driver's interrupt mode
+# (esb_nape_disptest.conf). Keyboard name etc. still come from
+# esb_nape_rx.
 
 endif
