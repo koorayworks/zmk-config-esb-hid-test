@@ -1,0 +1,43 @@
+/*
+ * Nape Deck LANDSCAPE PATTERN variant — layer on top of
+ * esb_nape_touchtest:
+ *
+ *   west build ... -DSHIELD="esb_nape_rx;esb_nape_disptest;esb_nape_touchtest;esb_nape_patternls"
+ *
+ * Display sharpness bisect, round 3. Rounds 1-2 changed repaint
+ * behavior (change-guarded refresh setters in the status screen)
+ * and the LVGL draw buffers (25% / double) with no perceptible
+ * change, and the panel init values / driver / SPI clock / PWM
+ * were verified identical to the Prospector Scanner firmware,
+ * which shows no smearing on this exact hardware. One physical
+ * difference remained untested: the Scanner drives the panel in
+ * LANDSCAPE — 280x240, MADCTL 0x60 (MV+MX), x-offset 20 — while
+ * every Deck build so far drives it portrait: 240x280, mdac 0x00,
+ * y-offset 20 (this panel's visible area sits 20 rows into the
+ * ST7789V's 240x320 address space in portrait).
+ *
+ * This shield flips ONLY that geometry, to the Scanner's values.
+ * All other panel parameters (vcom/gctrl/vrhs/vdvs/gamma/colmod/
+ * lcm/porch/cmd2en/pwctrl1/pvgam/nvgam/ram/rgb, the 20 MHz SPI
+ * clock from esb_nape_disptest) stay exactly as they are. Paired
+ * with CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN (see this
+ * shield's .conf), the touchtest app shows its static test
+ * pattern immediately at boot, laid out for 280x240 — so any
+ * change in the pattern's appearance between this build and the
+ * portrait touchtest build is attributable to scan direction
+ * alone.
+ *
+ * Expected and irrelevant for this bisect build: the production
+ * status screen underneath is still composed for 240x280 (it is
+ * covered by the pattern screen anyway), and touch input
+ * coordinates do not map onto the rotated geometry, so the tap
+ * screen's navigation is unusable here by design.
+ */
+
+&st7789v {
+	width = <280>;
+	height = <240>;
+	x-offset = <20>;
+	y-offset = <0>;
+	mdac = <0x60>;
+};

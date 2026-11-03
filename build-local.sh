@@ -60,6 +60,14 @@ west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-disptest -- \
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-touchtest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest" -DZMK_CONFIG="$PWD/config"
 
+# Nape landscape pattern test: touchtest + esb_nape_patternls
+# layered on top. Drives the panel in the Prospector Scanner's
+# landscape geometry (280x240, mdac 0x60, x-offset 20) and shows
+# the touchtest's static test pattern immediately at boot —
+# display-smear bisect for scan direction (round 3).
+west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-patternls -- \
+  "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest;esb_nape_patternls" -DZMK_CONFIG="$PWD/config"
+
 mkdir -p firmware
 # cp build/tx/zephyr/zmk.uf2 firmware/esb_tx.uf2
 # cp build/rx/zephyr/zmk.uf2 firmware/esb_rx.uf2
@@ -69,6 +77,7 @@ cp build/tentalice-tx/zephyr/zmk.uf2 firmware/esb_tentalice_tx.uf2
 cp build/nape-rx/zephyr/zmk.uf2 firmware/esb_nape_rx.uf2
 cp build/nape-disptest/zephyr/zmk.uf2 firmware/esb_nape_disptest.uf2
 cp build/nape-touchtest/zephyr/zmk.uf2 firmware/esb_nape_touchtest.uf2
+cp build/nape-patternls/zephyr/zmk.uf2 firmware/esb_nape_patternls.uf2
 
 # echo "TX: firmware/esb_tx.uf2"
 # echo "RX: firmware/esb_rx.uf2"
@@ -78,3 +87,4 @@ echo "Tentalice TX: firmware/esb_tentalice_tx.uf2"
 echo "Nape RX: firmware/esb_nape_rx.uf2"
 echo "Nape display test: firmware/esb_nape_disptest.uf2"
 echo "Nape touch test: firmware/esb_nape_touchtest.uf2"
+echo "Nape landscape pattern test: firmware/esb_nape_patternls.uf2"

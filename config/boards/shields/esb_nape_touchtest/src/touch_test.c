@@ -35,6 +35,16 @@
  * perceived smear lives in the status screen's rendering; if they
  * smear too, it is panel/driver level.
  *
+ * v6 is not a new app version but the esb_nape_patternls variant
+ * of this build (CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN):
+ * the panel is driven in the Prospector Scanner's geometry —
+ * landscape 280x240, mdac 0x60, x-offset 20, via that shield's
+ * &st7789v overrides — and the pattern screen is loaded first at
+ * boot, with its vertical layout compacted to fit 240 rows. This
+ * bisects scan direction: identical stack, identical pattern,
+ * only the panel geometry changes. Without the config, every
+ * code path below behaves exactly as v5.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -232,13 +242,23 @@ static void build_pattern_screen(void) {
         plain_rect(pattern_scr, 6, 86 + i * 8, 60, 1, 0xFFFFFF);
     }
 
-    /* Pure color bars, full width. */
+    /* Pure color bars, full width. In the landscape variant the
+     * vertical rhythm (bars and text lines) is compacted so that
+     * everything still fits, in 240 rows instead of 280. */
     static const uint32_t bar_colors[] = {0xFF0000, 0x00FF00, 0x0000FF,
                                           0xFFFFFF, 0x808080, 0x000000};
+#if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
+    const int32_t bar_y0 = 110;
+    const int32_t bar_step = 8;
+    const int32_t bar_h = 7;
+#else
     const int32_t bar_y0 = 112;
+    const int32_t bar_step = 10;
+    const int32_t bar_h = 9;
+#endif
 
     for (int i = 0; i < 6; i++) {
-        plain_rect(pattern_scr, 6, bar_y0 + i * 10, W - 12, 9, bar_colors[i]);
+        plain_rect(pattern_scr, 6, bar_y0 + i * bar_step, W - 12, bar_h, bar_colors[i]);
     }
 
     /* Text samples in every compiled font size (12/14/20/28 — this
@@ -246,14 +266,19 @@ static void build_pattern_screen(void) {
     static const struct {
         const lv_font_t *font;
         const char *text;
-        int32_t advance;
     } samples[] = {
-        {&lv_font_montserrat_12, "SHARP 12", 15},
-        {&lv_font_montserrat_14, "SHARP 14", 19},
-        {&lv_font_montserrat_20, "SHARP 20", 25},
-        {&lv_font_montserrat_28, "SHARP 28", 31},
+        {&lv_font_montserrat_12, "SHARP 12"},
+        {&lv_font_montserrat_14, "SHARP 14"},
+        {&lv_font_montserrat_20, "SHARP 20"},
+        {&lv_font_montserrat_28, "SHARP 28"},
     };
+#if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
+    static const int32_t advances[] = {13, 15, 21, 29};
+    int32_t ty = 160;
+#else
+    static const int32_t advances[] = {15, 19, 25, 31};
     int32_t ty = 176;
+#endif
 
     for (int i = 0; i < 4; i++) {
         lv_obj_t *label = lv_label_create(pattern_scr);
@@ -262,7 +287,7 @@ static void build_pattern_screen(void) {
         lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
         lv_label_set_text(label, samples[i].text);
         lv_obj_set_pos(label, 6, ty);
-        ty += samples[i].advance;
+        ty += advances[i];
     }
 
     /* BACK, bottom-right (the SHARP 28 label ends before it). */
@@ -279,8 +304,16 @@ static void screen_work_handler(struct k_work *work) {
     build_tap_screen();
     build_pattern_screen();
 
+#if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
+    /* Landscape bisect variant: show the pattern immediately.
+     * Touch coordinates do not map onto the rotated geometry, so
+     * tap navigation is meaningless in this build anyway. */
+    lv_scr_load(pattern_scr);
+    LOG_INF("TOUCHTEST pattern screen loaded");
+#else
     lv_scr_load(tap_scr);
     LOG_INF("TOUCHTEST tap screen loaded");
+#endif
 }
 
 static K_WORK_DEFINE(screen_work, screen_work_handler);

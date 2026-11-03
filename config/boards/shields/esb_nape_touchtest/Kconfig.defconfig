@@ -1,5 +1,16 @@
 if SHIELD_ESB_NAPE_TOUCHTEST
 
+config ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN
+	bool "Landscape pattern variant (esb_nape_patternls bisect)"
+	default n
+	help
+	  Set by the esb_nape_patternls shield, which drives the panel
+	  in the Prospector Scanner's landscape geometry (280x240).
+	  The touch test then loads its static test-pattern screen
+	  first at boot, laid out compactly for 240 rows (touch
+	  navigation is not usable in that geometry). With this off,
+	  the touch test behaves exactly as before.
+
 # Touch bring-up test variant layered on esb_nape_disptest: no
 # Kconfig changes of its own. Since the Step 2 dedupe, the touch
 # devicetree (CST816T on &xiao_i2c / i2c1 at 100 kHz, irq D0 /

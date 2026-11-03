@@ -1,0 +1,2 @@
+config SHIELD_ESB_NAPE_PATTERNLS
+	def_bool $(shields_list_contains,esb_nape_patternls)

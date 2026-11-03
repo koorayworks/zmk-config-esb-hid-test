@@ -1,0 +1,11 @@
+if SHIELD_ESB_NAPE_PATTERNLS
+
+# Landscape pattern bisect variant layered on esb_nape_touchtest:
+# no Kconfig changes of its own. The behavior switch lives in the
+# touchtest shield (CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN,
+# set by this shield's .conf fragment, which merges last in shield
+# order), and the panel geometry override lives in this shield's
+# overlay (&st7789v width/height/x-offset/y-offset/mdac). Keyboard
+# name etc. still come from esb_nape_rx.
+
+endif
