@@ -143,13 +143,19 @@ static lv_obj_t *register_status_label;
 static lv_obj_t *register_confirm_btn;
 
 /* ---- Change-guarded setters for the 500 ms refresh ----
- * Setting a label's text invalidates its area even when the new text
- * is identical, so unconditional refresh writes keep the panel
- * repainting the same pixels twice a second — a likely source of the
- * visible shimmer on an otherwise static screen. These helpers make
- * identical writes a no-op. Style/color calls are deliberately NOT
- * guarded: they carry state (e.g. the link-lost grey recolor) even
- * when the text happens to stay the same. */
+ * LVGL setters invalidate the object's area even when the new value
+ * is identical to the one already applied, so unconditional refresh
+ * writes keep the panel repainting the same pixels twice a second
+ * instead of leaving a static screen untouched. (The Prospector
+ * Scanner firmware never repaints a static screen — it is event
+ * driven — and does not show this shimmer on the same panel.) These
+ * helpers make identical writes a no-op, for label text as well as
+ * for the style/position writes: the style helpers below remember
+ * the last value applied per (object, part, property), so a write
+ * whose value actually changed — the link-lost grey recolor, a new
+ * layer color, the ACTIVE marker — still goes through on the very
+ * tick it happens, and only the identical re-application is
+ * skipped. */
 static void set_label_text_if_changed(lv_obj_t *label, const char *text) {
     const char *cur = lv_label_get_text(label);
 
@@ -177,6 +183,114 @@ static void set_gauge_width_if_changed(lv_obj_t *obj, lv_coord_t w) {
     if (w != batt_gauge_applied_w) {
         batt_gauge_applied_w = w;
         lv_obj_set_width(obj, w);
+    }
+}
+
+/* ---- Change-guarded style / position setters ----
+ * A tiny cache of the last value applied per (object, part,
+ * property). All screen objects live for the whole run (pages are
+ * created once, never destroyed), so keying on the object pointer
+ * is safe. When the cache fills up the helpers degrade to applying
+ * unconditionally, never to skipping a needed write. */
+
+enum style_prop_kind {
+    STYLE_PROP_TEXT_COLOR,
+    STYLE_PROP_BG_COLOR,
+    STYLE_PROP_BORDER_COLOR,
+    STYLE_PROP_TEXT_FONT,
+    STYLE_PROP_POS,
+};
+
+struct style_prop_entry {
+    const lv_obj_t *obj;
+    lv_part_t part;
+    uint8_t kind;   /* enum style_prop_kind */
+    uint32_t value; /* color hex, or the font pointer */
+    lv_coord_t x;   /* STYLE_PROP_POS only */
+    lv_coord_t y;   /* STYLE_PROP_POS only */
+};
+
+#define STYLE_PROP_CACHE_SIZE 48
+static struct style_prop_entry style_prop_cache[STYLE_PROP_CACHE_SIZE];
+
+/* True when exactly this value was already applied to (obj, part,
+ * kind) and the setter can be skipped; otherwise records the value
+ * and returns false so the caller applies it now. */
+static bool style_prop_already_applied(const lv_obj_t *obj, lv_part_t part,
+                                       enum style_prop_kind kind, uint32_t value, lv_coord_t x,
+                                       lv_coord_t y) {
+    struct style_prop_entry *empty = NULL;
+
+    for (int i = 0; i < STYLE_PROP_CACHE_SIZE; i++) {
+        struct style_prop_entry *e = &style_prop_cache[i];
+
+        if (e->obj == NULL) {
+            if (empty == NULL) {
+                empty = e;
+            }
+            continue;
+        }
+        if (e->obj == obj && e->part == part && e->kind == (uint8_t)kind) {
+            if (e->value == value && e->x == x && e->y == y) {
+                return true;
+            }
+            e->value = value;
+            e->x = x;
+            e->y = y;
+            return false;
+        }
+    }
+    if (empty != NULL) {
+        empty->obj = obj;
+        empty->part = part;
+        empty->kind = (uint8_t)kind;
+        empty->value = value;
+        empty->x = x;
+        empty->y = y;
+    }
+    return false;
+}
+
+static void set_style_text_color_if_changed(lv_obj_t *obj, lv_part_t part, uint32_t hex) {
+    if (!style_prop_already_applied(obj, part, STYLE_PROP_TEXT_COLOR, hex, 0, 0)) {
+        lv_obj_set_style_text_color(obj, lv_color_hex(hex), part);
+    }
+}
+
+static void set_style_bg_color_if_changed(lv_obj_t *obj, lv_part_t part, uint32_t hex) {
+    if (!style_prop_already_applied(obj, part, STYLE_PROP_BG_COLOR, hex, 0, 0)) {
+        lv_obj_set_style_bg_color(obj, lv_color_hex(hex), part);
+    }
+}
+
+static void set_style_border_color_if_changed(lv_obj_t *obj, lv_part_t part, uint32_t hex) {
+    if (!style_prop_already_applied(obj, part, STYLE_PROP_BORDER_COLOR, hex, 0, 0)) {
+        lv_obj_set_style_border_color(obj, lv_color_hex(hex), part);
+    }
+}
+
+static void set_style_text_font_if_changed(lv_obj_t *obj, lv_part_t part, const lv_font_t *font) {
+    if (!style_prop_already_applied(obj, part, STYLE_PROP_TEXT_FONT, (uint32_t)(uintptr_t)font, 0,
+                                    0)) {
+        lv_obj_set_style_text_font(obj, font, part);
+    }
+}
+
+static void set_pos_if_changed(lv_obj_t *obj, lv_coord_t x, lv_coord_t y) {
+    if (!style_prop_already_applied(obj, LV_PART_MAIN, STYLE_PROP_POS, 0, x, y)) {
+        lv_obj_set_pos(obj, x, y);
+    }
+}
+
+/* add_flag / clear_flag for HIDDEN likewise touch the object even
+ * when the flag already has the wanted state. */
+static void set_hidden_if_changed(lv_obj_t *obj, bool hidden) {
+    if (hidden != lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
+        if (hidden) {
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -225,10 +339,10 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, int x, int y, i
 }
 
 static void style_button(lv_obj_t *btn, uint32_t bg, uint32_t fg) {
-    lv_obj_set_style_bg_color(btn, lv_color_hex(bg), LV_PART_MAIN);
+    set_style_bg_color_if_changed(btn, LV_PART_MAIN, bg);
     lv_obj_t *label = lv_obj_get_child(btn, 0);
     if (label != NULL) {
-        lv_obj_set_style_text_color(label, lv_color_hex(fg), LV_PART_MAIN);
+        set_style_text_color_if_changed(label, LV_PART_MAIN, fg);
     }
 }
 
@@ -369,26 +483,24 @@ static void refresh_status_page(void) {
     bool link_lost = linked && (k_uptime_get() - st.last_seen_ms > ESB_HID_LINK_LOST_TIMEOUT_MS);
     const char *kb_name = linked ? resolve_active_name(active, &st) : "KEYBOARD";
 
-    lv_obj_set_style_bg_color(link_dot, lv_color_hex(linked ? COL_AMBER : COL_DOT_OFF),
-                              LV_PART_MAIN);
-
     uint8_t own = zmk_battery_state_of_charge();
     set_label_text_fmt_if_changed(own_batt_label, "%d%%", own);
-    lv_obj_set_style_text_color(own_batt_label, lv_color_hex(link_lost ? COL_LOST_MUTE : COL_SUB),
-                                LV_PART_MAIN);
+    set_style_text_color_if_changed(own_batt_label, LV_PART_MAIN,
+                                    link_lost ? COL_LOST_MUTE : COL_SUB);
 
     if (!linked) {
+        set_style_bg_color_if_changed(link_dot, LV_PART_MAIN, COL_DOT_OFF);
         set_label_text_if_changed(link_label, "ESB");
-        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, COL_SUB);
         set_label_text_if_changed(kb_name_label, "NO LINK");
         set_label_text_if_changed(layer_label, "");
         set_label_text_if_changed(batt_pct_label, "");
         set_gauge_width_if_changed(batt_gauge_fg, 0);
         set_label_text_if_changed(row_name_label, "KEYBOARD");
-        lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(row_name_label, LV_PART_MAIN, COL_MUTE);
         set_label_text_if_changed(row_pct_label, "");
         for (int i = 0; i < LAYER_COUNT; i++) {
-            lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_DOT_OFF), LV_PART_MAIN);
+            set_style_bg_color_if_changed(layer_dots[i], LV_PART_MAIN, COL_DOT_OFF);
         }
         return;
     }
@@ -396,27 +508,27 @@ static void refresh_status_page(void) {
     if (link_lost) {
         /* Last known state, all in muted greys; only the link area
          * changes its label. */
-        lv_obj_set_pos(link_dot, LINK_DOT_X_LOST, 13);
-        lv_obj_set_pos(link_label, LINK_LABEL_X_LOST, 10);
-        lv_obj_set_style_bg_color(link_dot, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
+        set_pos_if_changed(link_dot, LINK_DOT_X_LOST, 13);
+        set_pos_if_changed(link_label, LINK_LABEL_X_LOST, 10);
+        set_style_bg_color_if_changed(link_dot, LV_PART_MAIN, COL_LOST_DOT);
         set_label_text_if_changed(link_label, "NO LINK");
-        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, COL_LOST_MUTE);
 
         set_label_text_if_changed(kb_name_label, kb_name);
-        lv_obj_set_style_text_color(kb_name_label, lv_color_hex(COL_LOST_MAIN), LV_PART_MAIN);
+        set_style_text_color_if_changed(kb_name_label, LV_PART_MAIN, COL_LOST_MAIN);
 
         if (st.layer_name[0] != '\0') {
             set_label_text_if_changed(layer_label, st.layer_name);
         } else {
             set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
         }
-        lv_obj_set_style_text_color(layer_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(layer_label, LV_PART_MAIN, COL_LOST_MUTE);
         for (int i = 0; i < LAYER_COUNT; i++) {
-            lv_obj_set_style_bg_color(layer_dots[i], lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
+            set_style_bg_color_if_changed(layer_dots[i], LV_PART_MAIN, COL_LOST_DOT);
         }
 
-        lv_obj_set_style_text_color(batt_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
-        lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(batt_pct_label, LV_PART_MAIN, COL_LOST_MUTE);
+        set_style_text_color_if_changed(row_pct_label, LV_PART_MAIN, COL_LOST_MUTE);
         if (st.battery == 0xFF) {
             set_label_text_if_changed(batt_pct_label, "--%");
             set_gauge_width_if_changed(batt_gauge_fg, 0);
@@ -424,24 +536,24 @@ static void refresh_status_page(void) {
         } else {
             set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
             set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
-            lv_obj_set_style_bg_color(batt_gauge_fg, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
+            set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN, COL_LOST_DOT);
             set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
         }
 
-        lv_obj_set_style_border_color(row_radio, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(row_radio, lv_color_hex(COL_LOST_DOT), LV_PART_MAIN);
+        set_style_border_color_if_changed(row_radio, LV_PART_MAIN, COL_LOST_MUTE);
+        set_style_bg_color_if_changed(row_radio, LV_PART_MAIN, COL_LOST_DOT);
         set_label_text_if_changed(row_name_label, kb_name);
-        lv_obj_set_style_text_color(row_name_label, lv_color_hex(COL_LOST_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(row_name_label, LV_PART_MAIN, COL_LOST_MUTE);
         return;
     }
 
     /* Link alive: undo any link-lost styling before the normal
      * rendering below. */
-    lv_obj_set_pos(link_dot, LINK_DOT_X, 13);
-    lv_obj_set_pos(link_label, LINK_LABEL_X, 10);
-    lv_obj_set_style_text_color(kb_name_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_color(batt_pct_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_color(row_pct_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+    set_pos_if_changed(link_dot, LINK_DOT_X, 13);
+    set_pos_if_changed(link_label, LINK_LABEL_X, 10);
+    set_style_text_color_if_changed(kb_name_label, LV_PART_MAIN, 0xFFFFFF);
+    set_style_text_color_if_changed(batt_pct_label, LV_PART_MAIN, 0xFFFFFF);
+    set_style_text_color_if_changed(row_pct_label, LV_PART_MAIN, COL_SUB);
 
     set_label_text_if_changed(kb_name_label, kb_name);
 
@@ -452,28 +564,27 @@ static void refresh_status_page(void) {
      * updating, but the markers drop to gray and the label names the
      * active output. */
     bool via_esb = st.output == ESB_HID_STATUS_OUTPUT_ESB;
-    lv_obj_set_style_bg_color(link_dot, lv_color_hex(via_esb ? COL_AMBER : COL_SUB),
-                              LV_PART_MAIN);
-    lv_obj_set_style_border_color(row_radio,
-                                  lv_color_hex(via_esb ? COL_AMBER : COL_MUTE), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(row_radio, lv_color_hex(via_esb ? COL_AMBER : COL_DOT_OFF),
-                              LV_PART_MAIN);
+    set_style_bg_color_if_changed(link_dot, LV_PART_MAIN, via_esb ? COL_AMBER : COL_SUB);
+    set_style_border_color_if_changed(row_radio, LV_PART_MAIN,
+                                      via_esb ? COL_AMBER : COL_MUTE);
+    set_style_bg_color_if_changed(row_radio, LV_PART_MAIN,
+                                  via_esb ? COL_AMBER : COL_DOT_OFF);
     switch (st.output) {
     case ESB_HID_STATUS_OUTPUT_USB:
         set_label_text_if_changed(link_label, "USB");
-        lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, 0xFFFFFF);
         break;
     case ESB_HID_STATUS_OUTPUT_BLE:
         set_label_text_if_changed(link_label, "BLE");
-        lv_obj_set_style_text_color(link_label, lv_color_white(), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, 0xFFFFFF);
         break;
     case ESB_HID_STATUS_OUTPUT_NONE:
         set_label_text_if_changed(link_label, "NONE");
-        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_MUTE), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, COL_MUTE);
         break;
     default: /* ESB_HID_STATUS_OUTPUT_ESB */
         set_label_text_if_changed(link_label, "ESB");
-        lv_obj_set_style_text_color(link_label, lv_color_hex(COL_SUB), LV_PART_MAIN);
+        set_style_text_color_if_changed(link_label, LV_PART_MAIN, COL_SUB);
         break;
     }
 
@@ -484,10 +595,10 @@ static void refresh_status_page(void) {
     } else {
         set_label_text_fmt_if_changed(layer_label, "LAYER %d", st.layer);
     }
-    lv_obj_set_style_text_color(layer_label, lv_color_hex(lcol), LV_PART_MAIN);
+    set_style_text_color_if_changed(layer_label, LV_PART_MAIN, lcol);
     for (int i = 0; i < LAYER_COUNT; i++) {
-        lv_obj_set_style_bg_color(layer_dots[i],
-                                  lv_color_hex(i == layer ? lcol : COL_DOT_OFF), LV_PART_MAIN);
+        set_style_bg_color_if_changed(layer_dots[i], LV_PART_MAIN,
+                                      i == layer ? lcol : COL_DOT_OFF);
     }
 
     if (st.battery == 0xFF) {
@@ -497,13 +608,12 @@ static void refresh_status_page(void) {
     } else {
         set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
         set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
-        lv_obj_set_style_bg_color(batt_gauge_fg,
-                                  lv_color_hex(st.battery <= 20 ? COL_ALERT : 0xE8E8EA),
-                                  LV_PART_MAIN);
+        set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN,
+                                      st.battery <= 20 ? COL_ALERT : 0xE8E8EA);
         set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
     }
     set_label_text_if_changed(row_name_label, kb_name);
-    lv_obj_set_style_text_color(row_name_label, lv_color_white(), LV_PART_MAIN);
+    set_style_text_color_if_changed(row_name_label, LV_PART_MAIN, 0xFFFFFF);
 }
 
 /* ---- Refresh: KEYBOARDS page ---- */
@@ -515,13 +625,12 @@ static void refresh_keyboards_page(void) {
         struct esb_hid_slot_info info;
         bool ok = esb_hid_rx_get_slot_info(i, &info) == 0 && info.used;
 
-        lv_obj_set_style_bg_color(slot_dot[i],
-                                  lv_color_hex(ok && info.link_up ? COL_GREEN : COL_DOT_OFF),
-                                  LV_PART_MAIN);
+        set_style_bg_color_if_changed(slot_dot[i], LV_PART_MAIN,
+                                      ok && info.link_up ? COL_GREEN : COL_DOT_OFF);
         if (ok) {
             set_label_text_if_changed(slot_name_label[i],
                                       info.name[0] != '\0' ? info.name : "KEYBOARD");
-            lv_obj_set_style_text_color(slot_name_label[i], lv_color_white(), LV_PART_MAIN);
+            set_style_text_color_if_changed(slot_name_label[i], LV_PART_MAIN, 0xFFFFFF);
             if (info.battery == 0xFF) {
                 set_label_text_if_changed(slot_pct_label[i], "--");
             } else {
@@ -529,26 +638,14 @@ static void refresh_keyboards_page(void) {
             }
         } else {
             set_label_text_if_changed(slot_name_label[i], "EMPTY");
-            lv_obj_set_style_text_color(slot_name_label[i], lv_color_hex(COL_MUTE), LV_PART_MAIN);
+            set_style_text_color_if_changed(slot_name_label[i], LV_PART_MAIN, COL_MUTE);
             set_label_text_if_changed(slot_pct_label[i], "--");
         }
-        if (i == active && ok) {
-            lv_obj_clear_flag(slot_active_label[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(slot_active_label[i], LV_OBJ_FLAG_HIDDEN);
-        }
+        set_hidden_if_changed(slot_active_label[i], !(i == active && ok));
     }
 }
 
 /* ---- Refresh: DETAIL page ---- */
-
-static void set_hidden(lv_obj_t *obj, bool hidden) {
-    if (hidden) {
-        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    }
-}
 
 static void refresh_detail_page(void) {
     struct esb_hid_slot_info info;
@@ -557,19 +654,19 @@ static void refresh_detail_page(void) {
 
     if (!used) {
         set_label_text_if_changed(detail_name_label, "EMPTY SLOT");
-        lv_obj_set_style_text_font(detail_name_label, &lv_font_montserrat_20, LV_PART_MAIN);
+        set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, &lv_font_montserrat_20);
         set_label_text_if_changed(detail_batt_label, "Battery --");
         set_label_text_if_changed(detail_layer_label, "Layer --");
         set_label_text_if_changed(detail_link_label, "--");
         set_label_text_if_changed(detail_output_label, "Output --");
-        set_hidden(detail_switch_btn, true);
-        set_hidden(detail_delete_btn, true);
-        set_hidden(detail_register_btn, false);
+        set_hidden_if_changed(detail_switch_btn, true);
+        set_hidden_if_changed(detail_delete_btn, true);
+        set_hidden_if_changed(detail_register_btn, false);
         return;
     }
 
     set_label_text_if_changed(detail_name_label, info.name[0] != '\0' ? info.name : "KEYBOARD");
-    lv_obj_set_style_text_font(detail_name_label, &lv_font_montserrat_28, LV_PART_MAIN);
+    set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, &lv_font_montserrat_28);
     if (info.battery == 0xFF) {
         set_label_text_if_changed(detail_batt_label, "Battery --");
     } else {
@@ -587,12 +684,12 @@ static void refresh_detail_page(void) {
         set_label_text_if_changed(detail_output_label, "Output --");
     }
     set_label_text_if_changed(detail_link_label, info.link_up ? "LINKED" : "NO LINK");
-    lv_obj_set_style_text_color(detail_link_label,
-                                lv_color_hex(info.link_up ? COL_GREEN : COL_ALERT), LV_PART_MAIN);
+    set_style_text_color_if_changed(detail_link_label, LV_PART_MAIN,
+                                    info.link_up ? COL_GREEN : COL_ALERT);
 
-    set_hidden(detail_switch_btn, is_active);
-    set_hidden(detail_delete_btn, false);
-    set_hidden(detail_register_btn, true);
+    set_hidden_if_changed(detail_switch_btn, is_active);
+    set_hidden_if_changed(detail_delete_btn, false);
+    set_hidden_if_changed(detail_register_btn, true);
 
     set_label_text_fmt_if_changed(confirm_title_label, "Delete %s?",
                                   info.name[0] != '\0' ? info.name : "KEYBOARD");
