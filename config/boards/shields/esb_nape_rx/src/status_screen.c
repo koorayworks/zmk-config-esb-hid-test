@@ -12,7 +12,10 @@
  * the test pattern: shapes/lines/bars are pixel-perfect, only small
  * antialiased text was soft), so info text is 20 px where the layout
  * allows and 16 px where it does not (tab labels, battery percents,
- * the top-row link state).
+ * the top-row link state). All sizes route through the FONT_16/20/28
+ * macros below: Deck builds use custom-converted Montserrat
+ * SemiBold (src/fonts/, CONFIG_ESB_NAPE_RX_CUSTOM_FONT) since the
+ * stock Medium smears even at 20/28, just less visibly.
  *
  * Pages (containers created once at init, shown/hidden — never
  * created or destroyed on the refresh tick):
@@ -50,6 +53,24 @@
 LOG_MODULE_REGISTER(status_screen, LOG_LEVEL_INF);
 #include <zmk/battery.h>
 #include <zmk/display/status_screen.h>
+
+/* UI fonts: the three sizes the layout uses, routed through one
+ * place so the face can be swapped with a single conf change.
+ * With CONFIG_ESB_NAPE_RX_CUSTOM_FONT (the Deck builds) these are
+ * the custom-converted Montserrat SemiBold fonts in src/fonts/ —
+ * heavier strokes, because the stock Medium's antialiasing smears
+ * on this panel at every size. Without it (plain esb_nape_rx),
+ * the stock LVGL Montserrat is used exactly as before. */
+#if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
+#include "fonts/fonts_custom.h"
+#define FONT_16 (&lv_font_montserrat_sb_16)
+#define FONT_20 (&lv_font_montserrat_sb_20)
+#define FONT_28 (&lv_font_montserrat_sb_28)
+#else
+#define FONT_16 (&lv_font_montserrat_16)
+#define FONT_20 (&lv_font_montserrat_20)
+#define FONT_28 (&lv_font_montserrat_28)
+#endif
 
 #define COL_SUB 0x9A9AA0
 #define COL_MUTE 0x5C5C60
@@ -340,7 +361,7 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, int x, int y, i
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, user_data);
 
     lv_obj_t *label = lv_label_create(btn);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, FONT_16, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lv_color_hex(fg), LV_PART_MAIN);
     lv_label_set_text(label, text);
     lv_obj_center(label);
@@ -663,7 +684,7 @@ static void refresh_detail_page(void) {
 
     if (!used) {
         set_label_text_if_changed(detail_name_label, "EMPTY SLOT");
-        set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, &lv_font_montserrat_20);
+        set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, FONT_20);
         set_label_text_if_changed(detail_batt_label, "Battery --");
         set_label_text_if_changed(detail_layer_label, "Layer --");
         set_label_text_if_changed(detail_link_label, "--");
@@ -675,7 +696,7 @@ static void refresh_detail_page(void) {
     }
 
     set_label_text_if_changed(detail_name_label, info.name[0] != '\0' ? info.name : "KEYBOARD");
-    set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, &lv_font_montserrat_28);
+    set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, FONT_28);
     if (info.battery == 0xFF) {
         set_label_text_if_changed(detail_batt_label, "Battery --");
     } else {
@@ -818,28 +839,28 @@ static lv_obj_t *make_page(lv_obj_t *stage) {
 
 static void build_status_page(lv_obj_t *page) {
     /* Top row: brand / own battery / link state. */
-    lv_obj_t *brand = make_label(page, &lv_font_montserrat_16, 0xE8E8EA, 16, 10);
+    lv_obj_t *brand = make_label(page, FONT_16, 0xE8E8EA, 16, 10);
     lv_label_set_text(brand, "NAPE DECK");
     lv_obj_set_style_text_letter_space(brand, 2, LV_PART_MAIN);
 
-    own_batt_label = make_label(page, &lv_font_montserrat_16, 0xFFFFFF, 134, 10);
+    own_batt_label = make_label(page, FONT_16, 0xFFFFFF, 134, 10);
     lv_label_set_text(own_batt_label, "--%");
 
     link_dot = make_dot(page, LINK_DOT_X, LINK_DOT_Y, 6, COL_DOT_OFF);
-    link_label = make_label(page, &lv_font_montserrat_16, 0xFFFFFF, LINK_LABEL_X, 10);
+    link_label = make_label(page, FONT_16, 0xFFFFFF, LINK_LABEL_X, 10);
     lv_label_set_text(link_label, "ESB");
 
     /* Hero: keyboard name + layer. */
-    kb_name_label = make_label(page, &lv_font_montserrat_28, 0xFFFFFF, 16, 34);
+    kb_name_label = make_label(page, FONT_28, 0xFFFFFF, 16, 34);
     lv_label_set_text(kb_name_label, "NO LINK");
 
-    layer_label = make_label(page, &lv_font_montserrat_16, 0xFFFFFF, 16, 74);
+    layer_label = make_label(page, FONT_16, 0xFFFFFF, 16, 74);
     for (int i = 0; i < LAYER_COUNT; i++) {
         layer_dots[i] = make_dot(page, 104 + i * 9, 80, 5, COL_DOT_OFF);
     }
 
     /* Battery: percent + hairline gauge. */
-    batt_pct_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 100);
+    batt_pct_label = make_label(page, FONT_20, 0xFFFFFF, 16, 100);
     lv_obj_t *gauge_bg = lv_obj_create(page);
     lv_obj_set_size(gauge_bg, 208, 3);
     lv_obj_set_pos(gauge_bg, 16, 128);
@@ -867,7 +888,7 @@ static void build_status_page(lv_obj_t *page) {
     lv_obj_set_style_bg_opa(hr, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(hr, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *sect = make_label(page, &lv_font_montserrat_16, 0xE8E8EA, 16, 154);
+    lv_obj_t *sect = make_label(page, FONT_16, 0xE8E8EA, 16, 154);
     lv_label_set_text(sect, "KEYBOARDS");
     lv_obj_set_style_text_letter_space(sect, 3, LV_PART_MAIN);
 
@@ -881,13 +902,13 @@ static void build_status_page(lv_obj_t *page) {
     lv_obj_set_style_bg_opa(row_radio, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(row_radio, LV_OBJ_FLAG_SCROLLABLE);
 
-    row_name_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 34, 175);
+    row_name_label = make_label(page, FONT_20, 0xFFFFFF, 34, 175);
     lv_label_set_text(row_name_label, "KEYBOARD");
-    row_pct_label = make_label(page, &lv_font_montserrat_16, 0xFFFFFF, 196, 178);
+    row_pct_label = make_label(page, FONT_16, 0xFFFFFF, 196, 178);
 }
 
 static void build_keyboards_page(lv_obj_t *page) {
-    lv_obj_t *title = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 2);
+    lv_obj_t *title = make_label(page, FONT_20, 0xFFFFFF, 16, 2);
     lv_label_set_text(title, "KEYBOARDS");
     lv_obj_set_style_text_letter_space(title, 3, LV_PART_MAIN);
 
@@ -903,23 +924,23 @@ static void build_keyboards_page(lv_obj_t *page) {
         lv_obj_add_event_cb(row, slot_row_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
 
         slot_dot[i] = make_dot(row, 0, 19, 6, COL_DOT_OFF);
-        slot_name_label[i] = make_label(row, &lv_font_montserrat_20, 0xFFFFFF, 16, 1);
+        slot_name_label[i] = make_label(row, FONT_20, 0xFFFFFF, 16, 1);
         lv_label_set_text(slot_name_label[i], "EMPTY");
-        slot_active_label[i] = make_label(row, &lv_font_montserrat_16, COL_AMBER, 16, 24);
+        slot_active_label[i] = make_label(row, FONT_16, COL_AMBER, 16, 24);
         lv_label_set_text(slot_active_label[i], "ACTIVE");
-        slot_pct_label[i] = make_label(row, &lv_font_montserrat_16, 0xFFFFFF, 162, 3);
+        slot_pct_label[i] = make_label(row, FONT_16, 0xFFFFFF, 162, 3);
         lv_label_set_text(slot_pct_label[i], "--");
     }
 }
 
 static void build_detail_page(lv_obj_t *page) {
-    detail_name_label = make_label(page, &lv_font_montserrat_28, 0xFFFFFF, 16, 10);
+    detail_name_label = make_label(page, FONT_28, 0xFFFFFF, 16, 10);
     lv_label_set_text(detail_name_label, "EMPTY SLOT");
 
-    detail_batt_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 58);
-    detail_layer_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 82);
-    detail_link_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 106);
-    detail_output_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 130);
+    detail_batt_label = make_label(page, FONT_20, 0xFFFFFF, 16, 58);
+    detail_layer_label = make_label(page, FONT_20, 0xFFFFFF, 16, 82);
+    detail_link_label = make_label(page, FONT_20, 0xFFFFFF, 16, 106);
+    detail_output_label = make_label(page, FONT_20, 0xFFFFFF, 16, 130);
 
     detail_switch_btn = make_button(page, "SWITCH", 16, 158, 70, 36, COL_LINE, 0xFFFFFF,
                                     detail_switch_cb, NULL);
@@ -931,12 +952,12 @@ static void build_detail_page(lv_obj_t *page) {
 }
 
 static void build_confirm_page(lv_obj_t *page) {
-    confirm_title_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 16);
+    confirm_title_label = make_label(page, FONT_20, 0xFFFFFF, 16, 16);
     lv_obj_set_width(confirm_title_label, 208);
     lv_label_set_long_mode(confirm_title_label, LV_LABEL_LONG_WRAP);
     lv_label_set_text(confirm_title_label, "Delete?");
 
-    lv_obj_t *warn = make_label(page, &lv_font_montserrat_16, 0xE8E8EA, 16, 72);
+    lv_obj_t *warn = make_label(page, FONT_16, 0xE8E8EA, 16, 72);
     lv_label_set_text(warn, "The keyboard must register again to reconnect.");
 
     make_button(page, "DELETE", 16, 140, 96, 40, COL_ALERT, 0xFFFFFF, confirm_delete_cb, NULL);
@@ -944,15 +965,15 @@ static void build_confirm_page(lv_obj_t *page) {
 }
 
 static void build_register_page(lv_obj_t *page) {
-    lv_obj_t *title = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 10);
+    lv_obj_t *title = make_label(page, FONT_20, 0xFFFFFF, 16, 10);
     lv_label_set_text(title, "REGISTER");
 
-    lv_obj_t *hint = make_label(page, &lv_font_montserrat_16, 0xE8E8EA, 16, 42);
+    lv_obj_t *hint = make_label(page, FONT_16, 0xE8E8EA, 16, 42);
     lv_obj_set_width(hint, 208);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint, "Press the pairing key on the keyboard.");
 
-    register_status_label = make_label(page, &lv_font_montserrat_20, 0xFFFFFF, 16, 90);
+    register_status_label = make_label(page, FONT_20, 0xFFFFFF, 16, 90);
     lv_label_set_text(register_status_label, "Searching...");
 
     register_confirm_btn = make_button(page, "REGISTER", 16, 130, 96, 40, COL_LINE, COL_MUTE,
@@ -995,7 +1016,7 @@ static void build_tab_bar(lv_obj_t *stage) {
         tab_btns[i] = btn;
 
         lv_obj_t *label = lv_label_create(btn);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, LV_PART_MAIN);
+        lv_obj_set_style_text_font(label, FONT_16, LV_PART_MAIN);
         lv_obj_set_style_text_color(label, lv_color_hex(COL_SUB), LV_PART_MAIN);
         lv_label_set_text(label, names[i]);
         lv_obj_center(label);

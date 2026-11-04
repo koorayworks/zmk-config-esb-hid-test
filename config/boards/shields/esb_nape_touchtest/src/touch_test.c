@@ -62,6 +62,19 @@
  * blend/glyph path itself; dirt in the gray bars/ramp would
  * point back at mid-tone reproduction.
  *
+ * v8: the user took the custom-font route without waiting for
+ * the page-2 verdict. When CONFIG_ESB_NAPE_RX_CUSTOM_FONT=y
+ * (enabled by this shield's conf), page 2 gains sample lines
+ * under the stock Montserrat controls — the custom-converted
+ * Montserrat SemiBold the Deck UI now uses and a Bold for
+ * comparison at 20 px, plus SemiBold at 14 and 12 to judge
+ * whether the heavier face makes small sizes usable again
+ * (expectation: 14 is the floor; the production UI stays at
+ * 16/20/28 until judged). Page 2 lays out with a running y
+ * cursor and slightly tighter section metrics than v7 so every
+ * section stays inside the 240x240 common area with or without
+ * the sample lines.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -77,6 +90,17 @@
 #include <zmk/display.h>
 
 LOG_MODULE_REGISTER(touchtest);
+
+/* Custom-font comparison samples for pattern page 2 (v8). The
+ * font objects are compiled by the esb_nape_rx shield library
+ * (its src/fonts/), so they are only declared here — this file
+ * must not reference them when the config is off. */
+#if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
+LV_FONT_DECLARE(lv_font_montserrat_sb_12);
+LV_FONT_DECLARE(lv_font_montserrat_sb_14);
+LV_FONT_DECLARE(lv_font_montserrat_sb_20);
+LV_FONT_DECLARE(lv_font_montserrat_b_20);
+#endif
 
 /* The bus that hosts the touch node (i2c1 via &xiao_i2c in v4) —
  * never hardcode an instance: v1–v3 scanned i2c0 while the chip
@@ -366,21 +390,56 @@ static void build_pattern2_screen(void) {
     lv_obj_set_style_bg_opa(pattern2_scr, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(pattern2_scr, LV_OBJ_FLAG_SCROLLABLE);
 
+    /* Sections stack on a running y cursor (v8) so the optional
+     * custom-font samples can slot in without pushing the last
+     * section past the 240x240 common area; the section metrics
+     * are a few px tighter than v7's absolute layout. */
+    int32_t y = 4;
+
     /* 1. Bitmap-font text: unscii glyphs are 1 bpp — no
      * antialiasing anywhere in their path. Advances are fixed
      * (8 px/char at unscii_8, 16 px/char at unscii_16), and the
      * strings are sized to the 228 px usable width. */
-    p2_label(pattern2_scr, &lv_font_unscii_8, "UNSCII ABCDEFGHIJ 0123456789", 6, 6, 0xFFFFFF);
-    p2_label(pattern2_scr, &lv_font_unscii_8, "THE QUICK BROWN FOX JUMPS", 6, 15, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_unscii_8, "UNSCII ABCDEFGHIJ 0123456789", 6, y, 0xFFFFFF);
+    y += 8;
+    p2_label(pattern2_scr, &lv_font_unscii_8, "THE QUICK BROWN FOX JUMPS", 6, y, 0xFFFFFF);
+    y += 9;
 #if LV_FONT_UNSCII_16
-    p2_label(pattern2_scr, &lv_font_unscii_16, "UNSCII16 ABCDE", 6, 25, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_unscii_16, "UNSCII16 ABCDE", 6, y, 0xFFFFFF);
+    y += 17;
 #endif
 
     /* 2. AA control text: the same words in the stock Montserrat
      * (bpp 4). The strings are trimmed to fit 240 px at these
      * sizes (the full "... 0123456789" tail only fits at 14). */
-    p2_label(pattern2_scr, &lv_font_montserrat_14, "MONTSERRAT ABCDEFG 0123", 6, 45, 0xFFFFFF);
-    p2_label(pattern2_scr, &lv_font_montserrat_20, "MONTSERRAT ABC", 6, 66, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_montserrat_14, "MONTSERRAT ABCDEFG 0123", 6, y, 0xFFFFFF);
+    y += 15;
+    p2_label(pattern2_scr, &lv_font_montserrat_20, "MONTSERRAT ABC", 6, y, 0xFFFFFF);
+    y += 19;
+
+#if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
+    /* 2b. Custom-font samples (v8): the SemiBold the Deck UI
+     * uses, and a Bold for comparison, at the same 20 px as the
+     * stock control above. The SemiBold line drops the digit
+     * tail: at SemiBold advances the full string measures
+     * ~270 px and would run off the 240 px stage (the Bold line
+     * at ~220 px fits whole). */
+    p2_label(pattern2_scr, &lv_font_montserrat_sb_20, "SEMIBOLD ABCDEFG", 6, y, 0xFFFFFF);
+    y += 19;
+    p2_label(pattern2_scr, &lv_font_montserrat_b_20, "BOLD ABCDEFG 0123", 6, y, 0xFFFFFF);
+    y += 20;
+
+    /* 2c. Small-size SemiBold samples: does the heavier face
+     * make the sizes below the UI's 16 px floor usable again?
+     * (Expectation: 14 is the floor.) Judging samples only —
+     * the production UI stays at 16/20/28 until this is judged
+     * on hardware. Both strings fit whole at these sizes
+     * (~204 px at 14, ~173 px at 12, measured from the TTF). */
+    p2_label(pattern2_scr, &lv_font_montserrat_sb_14, "SEMIBOLD14 ABCDEFG 0123", 6, y, 0xFFFFFF);
+    y += 16;
+    p2_label(pattern2_scr, &lv_font_montserrat_sb_12, "SEMIBOLD12 ABCDEFG 0123", 6, y, 0xFFFFFF);
+    y += 15;
+#endif
 
     /* 3. Solid-gray stroke mimics: groups of 2 px / 3 px vertical
      * bars, glyph-stroke height, filled with plain grays. AA edge
@@ -399,23 +458,25 @@ static void build_pattern2_screen(void) {
         const int32_t gx = 6 + g * 57;
 
         for (int b = 0; b < 5; b++) {
-            plain_rect(pattern2_scr, gx + bar_dx[b], 98, bar_w[b], 20, grays[g]);
+            plain_rect(pattern2_scr, gx + bar_dx[b], y, bar_w[b], 12, grays[g]);
         }
-        p2_label(pattern2_scr, &lv_font_unscii_8, gray_names[g], gx + cap_dx[g], 121, 0xFFFFFF);
+        p2_label(pattern2_scr, &lv_font_unscii_8, gray_names[g], gx + cap_dx[g], y + 13, 0xFFFFFF);
     }
+    y += 23;
 
     /* 4. White Montserrat 20 blended over a solid mid-gray fill
      * instead of black: exercises the blend against a non-black
      * background. */
-    plain_rect(pattern2_scr, 6, 136, 228, 30, 0x808080);
-    p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, 141, 0xFFFFFF);
+    plain_rect(pattern2_scr, 6, y, 228, 24, 0x808080);
+    p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, y + 2, 0xFFFFFF);
+    y += 25;
 
     /* 5. 16-step gray ramp: adjacent solid bars, black to white
      * in steps of 17 — mid-tone solids at fine granularity. */
     for (int i = 0; i < 16; i++) {
         const uint32_t v = (uint32_t)i * 17u;
 
-        plain_rect(pattern2_scr, 6 + i * 14, 174, 14, 16, (v << 16) | (v << 8) | v);
+        plain_rect(pattern2_scr, 6 + i * 14, y, 14, 10, (v << 16) | (v << 8) | v);
     }
 
     /* BACK to pattern page 1, bottom-right like page 1's BACK. */

@@ -1,2 +1,16 @@
 config SHIELD_ESB_NAPE_RX
 	def_bool $(shields_list_contains,esb_nape_rx)
+
+config ESB_NAPE_RX_CUSTOM_FONT
+	bool "Deck UI uses custom-converted Montserrat SemiBold fonts"
+	depends on SHIELD_ESB_NAPE_RX
+	default n
+	help
+	  Route the status screen's three UI sizes (16/20/28) to the
+	  custom-converted Montserrat SemiBold fonts bundled in
+	  src/fonts/ instead of the stock LVGL Montserrat Medium,
+	  whose antialiasing smears on the Deck's ST7789V panel.
+	  Enabled by the disptest and touchtest shield confs; the
+	  plain receiver build leaves this off and is unchanged.
+	  Reverting is a one-line conf change (the routing lives in
+	  the FONT_16/FONT_20/FONT_28 macros in src/status_screen.c).
