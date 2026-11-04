@@ -45,6 +45,23 @@
  * only the panel geometry changes. Without the config, every
  * code path below behaves exactly as v5.
  *
+ * v7 adds a second pattern page (NEXT on the pattern page, BACK
+ * returns to it) to discriminate WHY antialiased text smears.
+ * Bisect rounds 1-4 exonerated the panel/driver/flush path: the
+ * page-1 shapes (checkerboard, 1 px lines, color bars) render
+ * pixel-perfect in both orientations, repaint guards / VDB size
+ * / label colors changed nothing, and even Montserrat 20/28
+ * smear (just less visibly than 12/14). Page 2 puts the
+ * remaining suspects side by side on one static screen: unscii
+ * bitmap-font text (1 bpp glyphs, no AA at all), Montserrat
+ * control lines, solid-gray bar groups that mimic glyph strokes
+ * at 25/50/75/100% (an AA edge pixel is exactly such a mid-gray
+ * — but here drawn as a plain fill), white text blended over a
+ * mid-gray fill, and a 16-step gray ramp. Crisp unscii + crisp
+ * gray bars + smeared Montserrat would convict the AA
+ * blend/glyph path itself; dirt in the gray bars/ramp would
+ * point back at mid-tone reproduction.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -98,6 +115,7 @@ static K_WORK_DELAYABLE_DEFINE(scan_work, scan_work_handler);
 
 static lv_obj_t *tap_scr;
 static lv_obj_t *pattern_scr;
+static lv_obj_t *pattern2_scr;
 static lv_obj_t *tap_label;
 static unsigned int tap_count;
 
@@ -127,6 +145,24 @@ static void back_btn_event_cb(lv_event_t *e) {
 
     lv_scr_load(tap_scr);
     LOG_INF("TOUCHTEST tap screen loaded");
+}
+
+static void next_btn_event_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    lv_scr_load(pattern2_scr);
+    LOG_INF("TOUCHTEST pattern 2 screen loaded");
+}
+
+static void back2_btn_event_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    lv_scr_load(pattern_scr);
+    LOG_INF("TOUCHTEST pattern screen loaded");
 }
 
 /* A button with explicit styles: this build's default theme renders
@@ -296,6 +332,98 @@ static void build_pattern_screen(void) {
     lv_obj_set_size(back_btn, 76, 34);
     lv_obj_set_pos(back_btn, W - 82, H - 40);
     button_label(back_btn, "BACK", &lv_font_montserrat_14);
+
+    /* NEXT to pattern page 2 (v7), top-center: the only free spot
+     * on this page in both geometries — the bottom rows carry the
+     * SHARP samples on the left and BACK on the right, the top
+     * corners carry the checkerboard and the 1 px lines. */
+    lv_obj_t *next_btn = styled_button(pattern_scr, 0x338833, next_btn_event_cb);
+
+    lv_obj_set_size(next_btn, 76, 34);
+    lv_obj_align(next_btn, LV_ALIGN_TOP_MID, 0, 6);
+    button_label(next_btn, "NEXT", &lv_font_montserrat_14);
+}
+
+/* ---- Pattern page 2 (v7): text-rendering discriminators ---- */
+
+static lv_obj_t *p2_label(lv_obj_t *parent, const lv_font_t *font, const char *text, int32_t x,
+                          int32_t y, uint32_t color_hex) {
+    lv_obj_t *label = lv_label_create(parent);
+
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(color_hex), LV_PART_MAIN);
+    lv_label_set_text(label, text);
+    lv_obj_set_pos(label, x, y);
+    return label;
+}
+
+static void build_pattern2_screen(void) {
+    const int32_t W = lv_display_get_horizontal_resolution(NULL);
+    const int32_t H = lv_display_get_vertical_resolution(NULL);
+
+    pattern2_scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(pattern2_scr, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pattern2_scr, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(pattern2_scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 1. Bitmap-font text: unscii glyphs are 1 bpp — no
+     * antialiasing anywhere in their path. Advances are fixed
+     * (8 px/char at unscii_8, 16 px/char at unscii_16), and the
+     * strings are sized to the 228 px usable width. */
+    p2_label(pattern2_scr, &lv_font_unscii_8, "UNSCII ABCDEFGHIJ 0123456789", 6, 6, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_unscii_8, "THE QUICK BROWN FOX JUMPS", 6, 15, 0xFFFFFF);
+#if LV_FONT_UNSCII_16
+    p2_label(pattern2_scr, &lv_font_unscii_16, "UNSCII16 ABCDE", 6, 25, 0xFFFFFF);
+#endif
+
+    /* 2. AA control text: the same words in the stock Montserrat
+     * (bpp 4). The strings are trimmed to fit 240 px at these
+     * sizes (the full "... 0123456789" tail only fits at 14). */
+    p2_label(pattern2_scr, &lv_font_montserrat_14, "MONTSERRAT ABCDEFG 0123", 6, 45, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_montserrat_20, "MONTSERRAT ABC", 6, 66, 0xFFFFFF);
+
+    /* 3. Solid-gray stroke mimics: groups of 2 px / 3 px vertical
+     * bars, glyph-stroke height, filled with plain grays. AA edge
+     * pixels are exactly such mid-grays produced by blending; if
+     * these solid bars are crisp while Montserrat strokes smear,
+     * mid-tone reproduction is fine and the blend/glyph data is
+     * the problem. Captions are unscii so they carry no AA of
+     * their own. */
+    static const uint32_t grays[] = {0x404040, 0x808080, 0xBFBFBF, 0xFFFFFF};
+    static const char *const gray_names[] = {"25", "50", "75", "100"};
+    static const int32_t cap_dx[] = {4, 4, 4, 0}; /* center the caption over the 24 px group */
+    static const int32_t bar_dx[] = {0, 5, 11, 16, 22};
+    static const int32_t bar_w[] = {2, 3, 2, 3, 2};
+
+    for (int g = 0; g < 4; g++) {
+        const int32_t gx = 6 + g * 57;
+
+        for (int b = 0; b < 5; b++) {
+            plain_rect(pattern2_scr, gx + bar_dx[b], 98, bar_w[b], 20, grays[g]);
+        }
+        p2_label(pattern2_scr, &lv_font_unscii_8, gray_names[g], gx + cap_dx[g], 121, 0xFFFFFF);
+    }
+
+    /* 4. White Montserrat 20 blended over a solid mid-gray fill
+     * instead of black: exercises the blend against a non-black
+     * background. */
+    plain_rect(pattern2_scr, 6, 136, 228, 30, 0x808080);
+    p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, 141, 0xFFFFFF);
+
+    /* 5. 16-step gray ramp: adjacent solid bars, black to white
+     * in steps of 17 — mid-tone solids at fine granularity. */
+    for (int i = 0; i < 16; i++) {
+        const uint32_t v = (uint32_t)i * 17u;
+
+        plain_rect(pattern2_scr, 6 + i * 14, 174, 14, 16, (v << 16) | (v << 8) | v);
+    }
+
+    /* BACK to pattern page 1, bottom-right like page 1's BACK. */
+    lv_obj_t *back_btn = styled_button(pattern2_scr, 0x2266CC, back2_btn_event_cb);
+
+    lv_obj_set_size(back_btn, 76, 34);
+    lv_obj_set_pos(back_btn, W - 82, H - 40);
+    button_label(back_btn, "BACK", &lv_font_montserrat_14);
 }
 
 static void screen_work_handler(struct k_work *work) {
@@ -303,6 +431,7 @@ static void screen_work_handler(struct k_work *work) {
 
     build_tap_screen();
     build_pattern_screen();
+    build_pattern2_screen();
 
 #if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
     /* Landscape bisect variant: show the pattern immediately.
