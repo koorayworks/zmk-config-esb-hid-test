@@ -412,7 +412,7 @@ static void show_page(enum deck_page page) {
         lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(active ? COL_LINE : 0x000000),
                                   LV_PART_MAIN);
         lv_obj_set_style_text_color(tab_labels[i],
-                                    lv_color_hex(active ? COL_AMBER : COL_SUB), LV_PART_MAIN);
+                                    lv_color_hex(active ? 0xFFFFFF : COL_SUB), LV_PART_MAIN);
     }
 }
 
