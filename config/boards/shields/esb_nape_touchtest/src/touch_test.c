@@ -160,6 +160,39 @@
  * update_resolution(), this removes it; and the walk
  * result splits the remaining suspects either way.
  *
+ * v11.3 (third hardware verdict): the walk completed over
+ * 172 objects — the object trees are healthy, that theory
+ * is dead — and the trail then stopped right after
+ * "setting resolution fields directly". So the wedge is
+ * in the hand-applied span itself (hor/ver stores, the
+ * screens[] coords loop, layer coords, inv memzeros,
+ * inv_p, lv_obj_invalidate(sys_layer)) — or just past it,
+ * in the rebuild, with the "resolution now" line stranded
+ * in the deferred log queue (no drain sleep followed it).
+ * Static re-reading of the span: lv_area_set_* are pure
+ * arithmetic; the private-struct layout CANNOT diverge
+ * (compile_commands.json shows this TU and lv_display.c
+ * built with identical -D sets and the same LV_CONF_PATH;
+ * the struct's only config-sized member is
+ * inv_areas[LV_INV_BUF_SIZE], and the config-conditional
+ * members sit in the tail); Zephyr asserts are compiled
+ * out (CONFIG_ASSERT unset), so LV_ASSERT_HANDLER is a
+ * no-op. The one call in the span that enters LVGL's
+ * event/visibility machinery — ext-draw-size style walks,
+ * display lookup, visibility parent climb — is
+ * lv_obj_invalidate(sys_layer), also the only machinery
+ * call common to the v11 death (update_resolution calls
+ * it too). v11.3 therefore (a) cross-checks this TU's
+ * private-field reads against the library's own getters
+ * before writing anything (read-only, prints the proof),
+ * (b) replaces lv_obj_invalidate(sys_layer) with its raw
+ * endpoint — one lv_inv_area() of the sys layer's full
+ * coords, which is all update_resolution's invalidate
+ * accomplishes (the sys layer is empty on this device),
+ * and (c) brackets EVERY substep of the field application
+ * and of the rebuild with a log + drain sleep, closing
+ * the stranded-log hole as well.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -182,6 +215,9 @@
  * into production code. */
 #include "display/lv_display_private.h"
 #include "core/lv_obj_private.h"
+/* v11.3: lv_inv_area() — the raw endpoint of the
+ * lv_obj_invalidate() chain (see the frame step). */
+#include "core/lv_refr_private.h"
 #include <zmk/display.h>
 
 LOG_MODULE_REGISTER(touchtest);
@@ -827,37 +863,115 @@ static void rotate_frame_work_handler(struct k_work *work) {
     rot_walk_count = 0;
     lv_obj_tree_walk(NULL, rot_walk_cb, NULL);
     LOG_INF("ROTATE: tree walk complete, %u objects", rot_walk_count);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 
+    /* v11.3 layout cross-check (read-only, before any
+     * write): this TU's private-field reads against the
+     * LVGL library's own getters. Build evidence says the
+     * layout cannot diverge (identical LV_CONF_PATH and
+     * -D sets for this TU and lv_display.c); this prints
+     * the runtime proof either way. */
+    {
+        lv_obj_t *lib_act = lv_display_get_screen_active(disp);
+        bool act_listed = false;
+
+        for (uint32_t i = 0; i < disp->screen_cnt; i++) {
+            if (disp->screens[i] == lib_act) {
+                act_listed = true;
+            }
+        }
+        LOG_INF("ROTATE: layout check: hor field=%d getter=%d, sys %p/%p, top %p/%p, "
+                "bottom %p/%p, act %p/%p listed=%d, screen_cnt=%u",
+                (int)disp->hor_res, (int)lv_display_get_horizontal_resolution(disp),
+                (void *)disp->sys_layer, (void *)lv_display_get_layer_sys(disp),
+                (void *)disp->top_layer, (void *)lv_display_get_layer_top(disp),
+                (void *)disp->bottom_layer, (void *)lv_display_get_layer_bottom(disp),
+                (void *)disp->act_scr, (void *)lib_act, (int)act_listed,
+                (unsigned)disp->screen_cnt);
+        k_msleep(ROTATE_LOG_DRAIN_MS);
+    }
+
+    /* v11.3: every substep bracketed with a log + drain
+     * sleep. fs5 replaces lv_obj_invalidate(sys_layer) —
+     * the span's only call into LVGL's event/visibility
+     * machinery, and the only machinery call common to
+     * the v11 and v11.2 deaths — with its raw endpoint:
+     * a single lv_inv_area() of the sys layer's full
+     * (new) coords, which is all update_resolution()'s
+     * invalidate accomplishes. The sys layer is empty on
+     * this device, so nothing visual rides on it. */
     LOG_INF("ROTATE: setting resolution fields directly to %dx%d", (int)w, (int)h);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: fs1 hor/ver write");
     k_msleep(ROTATE_LOG_DRAIN_MS);
     disp->hor_res = w;
     disp->ver_res = h;
+    LOG_INF("ROTATE: fs1 done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: fs2 screens loop, cnt=%u", (unsigned)disp->screen_cnt);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     for (uint32_t i = 0; i < disp->screen_cnt; i++) {
         lv_area_set_width(&disp->screens[i]->coords, w);
         lv_area_set_height(&disp->screens[i]->coords, h);
     }
+    LOG_INF("ROTATE: fs2 done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: fs3 layer coords");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     lv_area_set_width(&disp->top_layer->coords, w);
     lv_area_set_height(&disp->top_layer->coords, h);
     lv_area_set_width(&disp->sys_layer->coords, w);
     lv_area_set_height(&disp->sys_layer->coords, h);
     lv_area_set_width(&disp->bottom_layer->coords, w);
     lv_area_set_height(&disp->bottom_layer->coords, h);
+    LOG_INF("ROTATE: fs3 done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: fs4 inv reset");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     lv_memzero(disp->inv_areas, sizeof(disp->inv_areas));
     lv_memzero(disp->inv_area_joined, sizeof(disp->inv_area_joined));
     disp->inv_p = 0;
-    lv_obj_invalidate(disp->sys_layer);
+    LOG_INF("ROTATE: fs4 done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: fs5 sys-layer inv_area (raw, replaces lv_obj_invalidate)");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    {
+        lv_area_t sys_area;
+
+        lv_area_copy(&sys_area, &disp->sys_layer->coords);
+        lv_inv_area(disp, &sys_area);
+    }
+    LOG_INF("ROTATE: fs5 done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
     LOG_INF("ROTATE: resolution now %dx%d",
             (int)lv_display_get_horizontal_resolution(disp),
             (int)lv_display_get_vertical_resolution(disp));
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 
     lv_obj_t *old_tap = tap_scr;
     lv_obj_t *old_pattern = pattern_scr;
     lv_obj_t *old_pattern2 = pattern2_scr;
 
+    LOG_INF("ROTATE: rb build tap");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     build_tap_screen();
+    LOG_INF("ROTATE: rb build pattern");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     build_pattern_screen();
+    LOG_INF("ROTATE: rb build pattern2");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     build_pattern2_screen();
+    LOG_INF("ROTATE: rb load");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     lv_scr_load(cur_scr == 2 ? pattern2_scr : (cur_scr == 1 ? pattern_scr : tap_scr));
+    LOG_INF("ROTATE: rb delete olds");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     if (old_tap != NULL) {
         lv_obj_delete(old_tap);
     }
@@ -870,6 +984,8 @@ static void rotate_frame_work_handler(struct k_work *work) {
 
     LOG_INF("ROTATE: screens rebuilt + reloaded (cur_scr=%d), sequence complete", cur_scr);
     LOG_INF("TOUCHTEST rotate -> %d deg (%dx%d)", rot_idx * 90, (int)w, (int)h);
+    LOG_INF("ROTATE: frame step exit");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 }
 
 static void screen_work_handler(struct k_work *work) {
