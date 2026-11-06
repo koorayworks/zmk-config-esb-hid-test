@@ -122,6 +122,13 @@
  * that build's boot geometry comes from DT, not from this
  * runtime state, so cycling would start from a lie.
  *
+ * v11.1 (first hardware verdict): a ROTATE tap wedged the
+ * whole UI — frozen frame, dead touch, and none of the
+ * instrumented logs ever flushed. The switch is now staged:
+ * the panel step runs on the system work queue, the LVGL
+ * reframe on the display queue, with log-drain sleeps before
+ * each risky call (see the stage handlers for the reasoning).
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -219,8 +226,18 @@ static const enum display_orientation rot_cycle[4] = {
 };
 static uint8_t rot_idx;
 
-static void rotate_work_handler(struct k_work *work);
-static K_WORK_DEFINE(rotate_work, rotate_work_handler);
+/* The switch runs in two stages (v11.1, see the stage handlers
+ * below): the panel step on the system work queue, the LVGL
+ * reframe step on the display queue. pend_* carries the target
+ * geometry from the first stage to the second. */
+static enum display_orientation pend_zo;
+static int32_t pend_w;
+static int32_t pend_h;
+
+static void rotate_panel_work_handler(struct k_work *work);
+static K_WORK_DEFINE(rotate_panel_work, rotate_panel_work_handler);
+static void rotate_frame_work_handler(struct k_work *work);
+static K_WORK_DEFINE(rotate_frame_work, rotate_frame_work_handler);
 
 static void rotate_btn_event_cb(lv_event_t *e) {
     LOG_INF("BTN: rotate");
@@ -233,12 +250,17 @@ static void rotate_btn_event_cb(lv_event_t *e) {
             rot_idx * 90);
 
     /* Only queue the switch: the screens cannot be rebuilt from
-     * inside this event (the button itself is on one of them),
-     * and the display queue serializes the work against LVGL
-     * refreshes. */
-    k_work_submit_to_queue(zmk_display_work_q(), &rotate_work);
+     * inside this event (the button itself is on one of them).
+     * The panel step goes to the system work queue, NOT the
+     * display queue: the display queue is serial and carries
+     * every LVGL tick, so a step that never returned there
+     * would freeze input and refresh together — and with
+     * deferred logging on the lowest-priority thread, its
+     * buffered lines would never flush either (the v11
+     * symptom: one ROTATE tap, then total silence). */
+    k_work_submit(&rotate_panel_work);
     LOG_INF("TOUCHTEST rotate queued");
-    LOG_INF("ROTATE: work submitted to display queue");
+    LOG_INF("ROTATE: panel step submitted to system queue");
 }
 
 static void tap_btn_event_cb(lv_event_t *e) {
@@ -621,24 +643,55 @@ static void build_pattern2_screen(void) {
     button_label(back_btn, "BACK", &lv_font_montserrat_14);
 }
 
-/* Live rotation switch (v11). Runs on the display queue, never
- * concurrently with an LVGL refresh or a touch event. Order:
- * panel first (MADCTL + margins via the forked driver), then the
- * pointer glue's cached capabilities (it transforms every event
- * against that cache, read live), then LVGL's logical frame
- * (resizes all screens and forces a full re-render), then a
- * rebuild of the three test screens at the new resolution. */
-static void rotate_work_handler(struct k_work *work) {
+/* Live rotation switch (v11), staged in v11.1 after the first
+ * hardware run wedged the Deck: a ROTATE tap killed all touch,
+ * the screen froze as-is, and not one of the instrumented
+ * ROTATE:/BTN: lines ever reached the log. The v11 sequence ran
+ * entirely as one work item on the display queue — the serial
+ * queue that also carries every LVGL tick (input + refresh) —
+ * so anything in it that never returns (spin or fault) takes
+ * the whole UI down with it, and because logging is deferred
+ * to the lowest-priority thread, the buffered lines die
+ * unsent. The prime suspect inside is the first-ever runtime
+ * call of the forked driver's display_set_orientation() (the
+ * same transmit path otherwise only ever runs from SYS_INIT
+ * at boot), with the set_resolution + screen delete/rebuild
+ * right behind it.
+ *
+ * v11.1 therefore splits the switch:
+ *
+ *  Stage 1 (system work queue): the panel step —
+ *  display_set_orientation() only. It runs off the LVGL
+ *  thread, so if the driver call is what wedges, LVGL and
+ *  touch stay alive. Between the stages LVGL keeps flushing
+ *  in the old frame against the rotated panel for a few
+ *  ticks — a transient skew on a bring-up build, corrected
+ *  by the full redraw in stage 2.
+ *
+ *  Stage 2 (display queue): the LVGL reframe — pointer glue
+ *  capability cache, lv_display_set_resolution(), rebuild of
+ *  the three test screens at the new resolution, reload,
+ *  delete of the old screens. Pure LVGL work, which must
+ *  stay on the display queue.
+ *
+ * Each stage logs, then sleeps ROTATE_LOG_DRAIN_MS before its
+ * risky call, so the log thread gets the CPU and the trail is
+ * physically out: the last ROTATE: line is the step that died.
+ */
+#define ROTATE_LOG_DRAIN_MS 200
+
+static void rotate_panel_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    LOG_INF("ROTATE: work handler entry, rot_idx=%u (%d deg)", rot_idx, rot_idx * 90);
+    LOG_INF("ROTATE: panel step entry, rot_idx=%u (%d deg)", rot_idx, rot_idx * 90);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 
-    rot_idx = (rot_idx + 1) & 0x3;
-    const enum display_orientation zo = rot_cycle[rot_idx];
-    const int32_t w = (rot_idx & 1) ? 280 : 240;
-    const int32_t h = (rot_idx & 1) ? 240 : 280;
+    const uint8_t next_idx = (rot_idx + 1) & 0x3;
+    const enum display_orientation zo = rot_cycle[next_idx];
+    const int32_t w = (next_idx & 1) ? 280 : 240;
+    const int32_t h = (next_idx & 1) ? 240 : 280;
 
-    LOG_INF("ROTATE: target orientation=%d (%d deg), logical %dx%d", (int)zo, rot_idx * 90,
+    LOG_INF("ROTATE: target orientation=%d (%d deg), logical %dx%d", (int)zo, next_idx * 90,
             (int)w, (int)h);
 
     if (!device_is_ready(panel)) {
@@ -648,6 +701,7 @@ static void rotate_work_handler(struct k_work *work) {
     }
 
     LOG_INF("ROTATE: calling display_set_orientation(%d)", (int)zo);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     int ret = display_set_orientation(panel, zo);
     LOG_INF("ROTATE: display_set_orientation -> %d", ret);
 
@@ -656,6 +710,28 @@ static void rotate_work_handler(struct k_work *work) {
         LOG_ERR("ROTATE: set_orientation failed (%d), cap/resolution NOT updated", ret);
         return;
     }
+
+    /* Commit only now: until the panel has actually switched,
+     * rot_idx keeps describing the geometry LVGL still uses. */
+    rot_idx = next_idx;
+    pend_zo = zo;
+    pend_w = w;
+    pend_h = h;
+
+    k_work_submit_to_queue(zmk_display_work_q(), &rotate_frame_work);
+    LOG_INF("ROTATE: frame step submitted to display queue");
+}
+
+static void rotate_frame_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+
+    const enum display_orientation zo = pend_zo;
+    const int32_t w = pend_w;
+    const int32_t h = pend_h;
+
+    LOG_INF("ROTATE: frame step entry, rot_idx=%u (%d deg), logical %dx%d", rot_idx,
+            rot_idx * 90, (int)w, (int)h);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 
     lv_display_t *disp = lv_display_get_default();
     struct lvgl_disp_data *dd = lv_display_get_user_data(disp);
@@ -674,6 +750,7 @@ static void rotate_work_handler(struct k_work *work) {
     }
 
     LOG_INF("ROTATE: calling lv_display_set_resolution(%d, %d)", (int)w, (int)h);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
     lv_display_set_resolution(disp, w, h);
     LOG_INF("ROTATE: resolution now %dx%d",
             (int)lv_display_get_horizontal_resolution(disp),
