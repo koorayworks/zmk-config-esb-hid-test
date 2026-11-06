@@ -223,9 +223,14 @@ static void rotate_work_handler(struct k_work *work);
 static K_WORK_DEFINE(rotate_work, rotate_work_handler);
 
 static void rotate_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: rotate");
+
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
+
+    LOG_INF("ROTATE: click, current rot_idx=%u (%d deg), queueing switch", rot_idx,
+            rot_idx * 90);
 
     /* Only queue the switch: the screens cannot be rebuilt from
      * inside this event (the button itself is on one of them),
@@ -233,9 +238,12 @@ static void rotate_btn_event_cb(lv_event_t *e) {
      * refreshes. */
     k_work_submit_to_queue(zmk_display_work_q(), &rotate_work);
     LOG_INF("TOUCHTEST rotate queued");
+    LOG_INF("ROTATE: work submitted to display queue");
 }
 
 static void tap_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: tap");
+
     if (lv_event_get_code(e) != LV_EVENT_PRESSED) {
         return;
     }
@@ -246,6 +254,8 @@ static void tap_btn_event_cb(lv_event_t *e) {
 }
 
 static void pattern_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: pattern");
+
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
@@ -256,6 +266,8 @@ static void pattern_btn_event_cb(lv_event_t *e) {
 }
 
 static void back_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: back");
+
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
@@ -266,6 +278,8 @@ static void back_btn_event_cb(lv_event_t *e) {
 }
 
 static void next_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: next");
+
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
@@ -276,6 +290,8 @@ static void next_btn_event_cb(lv_event_t *e) {
 }
 
 static void back2_btn_event_cb(lv_event_t *e) {
+    LOG_INF("BTN: back2");
+
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
@@ -615,20 +631,29 @@ static void build_pattern2_screen(void) {
 static void rotate_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
+    LOG_INF("ROTATE: work handler entry, rot_idx=%u (%d deg)", rot_idx, rot_idx * 90);
+
     rot_idx = (rot_idx + 1) & 0x3;
     const enum display_orientation zo = rot_cycle[rot_idx];
     const int32_t w = (rot_idx & 1) ? 280 : 240;
     const int32_t h = (rot_idx & 1) ? 240 : 280;
 
+    LOG_INF("ROTATE: target orientation=%d (%d deg), logical %dx%d", (int)zo, rot_idx * 90,
+            (int)w, (int)h);
+
     if (!device_is_ready(panel)) {
         LOG_ERR("TOUCHTEST rotate: panel not ready");
+        LOG_ERR("ROTATE: panel not ready, aborting (nothing applied)");
         return;
     }
 
+    LOG_INF("ROTATE: calling display_set_orientation(%d)", (int)zo);
     int ret = display_set_orientation(panel, zo);
+    LOG_INF("ROTATE: display_set_orientation -> %d", ret);
 
     if (ret != 0) {
         LOG_ERR("TOUCHTEST rotate: set_orientation -> %d", ret);
+        LOG_ERR("ROTATE: set_orientation failed (%d), cap/resolution NOT updated", ret);
         return;
     }
 
@@ -636,11 +661,23 @@ static void rotate_work_handler(struct k_work *work) {
     struct lvgl_disp_data *dd = lv_display_get_user_data(disp);
 
     if (dd != NULL) {
+        LOG_INF("ROTATE: cap before: orientation=%d, %dx%d", (int)dd->cap.current_orientation,
+                (int)dd->cap.x_resolution, (int)dd->cap.y_resolution);
         dd->cap.current_orientation = zo;
         dd->cap.x_resolution = w;
         dd->cap.y_resolution = h;
+        LOG_INF("ROTATE: cap after: orientation=%d, %dx%d", (int)dd->cap.current_orientation,
+                (int)dd->cap.x_resolution, (int)dd->cap.y_resolution);
+    } else {
+        LOG_ERR("ROTATE: lvgl_disp_data is NULL, cap NOT updated (panel rotated, glue cache "
+                "stale)");
     }
+
+    LOG_INF("ROTATE: calling lv_display_set_resolution(%d, %d)", (int)w, (int)h);
     lv_display_set_resolution(disp, w, h);
+    LOG_INF("ROTATE: resolution now %dx%d",
+            (int)lv_display_get_horizontal_resolution(disp),
+            (int)lv_display_get_vertical_resolution(disp));
 
     lv_obj_t *old_tap = tap_scr;
     lv_obj_t *old_pattern = pattern_scr;
@@ -660,6 +697,7 @@ static void rotate_work_handler(struct k_work *work) {
         lv_obj_delete(old_pattern2);
     }
 
+    LOG_INF("ROTATE: screens rebuilt + reloaded (cur_scr=%d), sequence complete", cur_scr);
     LOG_INF("TOUCHTEST rotate -> %d deg (%dx%d)", rot_idx * 90, (int)w, (int)h);
 }
 
