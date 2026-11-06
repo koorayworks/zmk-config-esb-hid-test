@@ -129,6 +129,37 @@
  * reframe on the display queue, with log-drain sleeps before
  * each risky call (see the stage handlers for the reasoning).
  *
+ * v11.2 (second hardware verdict): the staging worked as a
+ * trap. The log trail proved the panel step innocent
+ * (display_set_orientation -> 0, "Changed orientation to 1")
+ * and the capability-cache update fine; the last line ever
+ * printed was "ROTATE: calling lv_display_set_resolution
+ * (...)". Death is inside lv_display_set_resolution() —
+ * i.e. inside update_resolution() — or in the refresh it
+ * arms. Reading LVGL 9.3's update_resolution() shows only
+ * bounded work (per-screen coords + LV_EVENT_SIZE_CHANGED
+ * sends, a full object-tree walk marking layouts dirty,
+ * invalidation state reset, LV_EVENT_RESOLUTION_CHANGED —
+ * no listener for it exists in this tree) — but one piece
+ * of it has never run at runtime on this device: the tree
+ * walk descends into EVERY screen, including the production
+ * status screen's widget tree, which no other runtime path
+ * ever walks (refresh only descends into the ACTIVE screen,
+ * and the status screen is covered here). A corrupt child
+ * array there — the Deck UI churns objects at runtime —
+ * would wedge or fault the walk while leaving normal
+ * operation intact, matching the total silence. Stage 2
+ * therefore now (a) walks the trees itself first, with
+ * heartbeat logs that keep escaping (a cyclic tree shows
+ * up as endless heartbeats, a healthy one as a total), and
+ * (b) applies the resolution change by hand: resolution
+ * fields, screen/layer coords, invalidation state —
+ * exactly update_resolution()'s state changes minus the
+ * event sends and the walk, neither of which the rebuilt
+ * test screens need. If the wedge was inside
+ * update_resolution(), this removes it; and the walk
+ * result splits the remaining suspects either way.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -143,6 +174,14 @@
 
 #include <lvgl.h>
 #include <lvgl_display.h>
+/* v11.2: stage 2 writes the display's resolution fields
+ * directly instead of calling lv_display_set_resolution()
+ * (see the header note), which needs the private struct.
+ * Zephyr's LVGL port puts the LVGL src/ tree on the include
+ * path, so this resolves. Prototype only — do not copy this
+ * into production code. */
+#include "display/lv_display_private.h"
+#include "core/lv_obj_private.h"
 #include <zmk/display.h>
 
 LOG_MODULE_REGISTER(touchtest);
@@ -669,10 +708,12 @@ static void build_pattern2_screen(void) {
  *  by the full redraw in stage 2.
  *
  *  Stage 2 (display queue): the LVGL reframe — pointer glue
- *  capability cache, lv_display_set_resolution(), rebuild of
- *  the three test screens at the new resolution, reload,
- *  delete of the old screens. Pure LVGL work, which must
- *  stay on the display queue.
+ *  capability cache, the resolution change, rebuild of the
+ *  three test screens at the new resolution, reload, delete
+ *  of the old screens. Pure LVGL work, which must stay on
+ *  the display queue. (v11.2: the resolution change is
+ *  applied by hand, not via lv_display_set_resolution() —
+ *  see the header note.)
  *
  * Each stage logs, then sleeps ROTATE_LOG_DRAIN_MS before its
  * risky call, so the log thread gets the CPU and the trail is
@@ -722,6 +763,27 @@ static void rotate_panel_work_handler(struct k_work *work) {
     LOG_INF("ROTATE: frame step submitted to display queue");
 }
 
+/* Tree-walk diagnostic (v11.2): counts every object in every
+ * screen's tree. The heartbeat fires every 256 objects and
+ * then sleeps briefly so the lowest-priority log thread can
+ * physically flush it even mid-walk: if the walk never
+ * returns, a healthy tree is excluded and the heartbeat
+ * count at the stall (or its endless growth, for a cyclic
+ * child array) is the evidence. */
+static uint32_t rot_walk_count;
+
+static lv_obj_tree_walk_res_t rot_walk_cb(lv_obj_t *obj, void *user_data) {
+    ARG_UNUSED(obj);
+    ARG_UNUSED(user_data);
+
+    rot_walk_count++;
+    if ((rot_walk_count % 256) == 0) {
+        LOG_INF("ROTATE: walk heartbeat, %u objects", rot_walk_count);
+        k_msleep(20);
+    }
+    return LV_OBJ_TREE_WALK_NEXT;
+}
+
 static void rotate_frame_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
@@ -749,9 +811,41 @@ static void rotate_frame_work_handler(struct k_work *work) {
                 "stale)");
     }
 
-    LOG_INF("ROTATE: calling lv_display_set_resolution(%d, %d)", (int)w, (int)h);
+    /* v11.2: lv_display_set_resolution() is bypassed (see the
+     * header note). First walk every object tree ourselves —
+     * the same descent update_resolution() would do — with
+     * heartbeats, then apply its state changes by hand:
+     * resolution fields, screen/layer coords, invalidation
+     * state. Dropped on purpose: the LV_EVENT_SIZE_CHANGED
+     * sends (the three test screens are rebuilt right below,
+     * and the covered status screen re-lays itself out on its
+     * next ZMK-driven update), the layout-dirty tree walk
+     * (same reason), and LV_EVENT_RESOLUTION_CHANGED (no
+     * listener exists in this tree). */
+    LOG_INF("ROTATE: self-walk of object trees first");
     k_msleep(ROTATE_LOG_DRAIN_MS);
-    lv_display_set_resolution(disp, w, h);
+    rot_walk_count = 0;
+    lv_obj_tree_walk(NULL, rot_walk_cb, NULL);
+    LOG_INF("ROTATE: tree walk complete, %u objects", rot_walk_count);
+
+    LOG_INF("ROTATE: setting resolution fields directly to %dx%d", (int)w, (int)h);
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    disp->hor_res = w;
+    disp->ver_res = h;
+    for (uint32_t i = 0; i < disp->screen_cnt; i++) {
+        lv_area_set_width(&disp->screens[i]->coords, w);
+        lv_area_set_height(&disp->screens[i]->coords, h);
+    }
+    lv_area_set_width(&disp->top_layer->coords, w);
+    lv_area_set_height(&disp->top_layer->coords, h);
+    lv_area_set_width(&disp->sys_layer->coords, w);
+    lv_area_set_height(&disp->sys_layer->coords, h);
+    lv_area_set_width(&disp->bottom_layer->coords, w);
+    lv_area_set_height(&disp->bottom_layer->coords, h);
+    lv_memzero(disp->inv_areas, sizeof(disp->inv_areas));
+    lv_memzero(disp->inv_area_joined, sizeof(disp->inv_area_joined));
+    disp->inv_p = 0;
+    lv_obj_invalidate(disp->sys_layer);
     LOG_INF("ROTATE: resolution now %dx%d",
             (int)lv_display_get_horizontal_resolution(disp),
             (int)lv_display_get_vertical_resolution(disp));
