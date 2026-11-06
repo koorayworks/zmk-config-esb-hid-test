@@ -75,6 +75,16 @@
  * section stays inside the 240x240 common area with or without
  * the sample lines.
  *
+ * v9: the bpp 4 SemiBold smeared on hardware exactly like the
+ * stock font (and the color fringes on glyph edges are visible
+ * to the naked eye), so section 2b of page 2 becomes the bpp
+ * axis of the SemiBold face: bpp 8 (via the
+ * ESB_NAPE_RX_FONT_BPP8 switch — also the status UI default of
+ * this build), bpp 4 and bpp 1 at 20 px with unscii captions,
+ * plus SemiBold 14 at bpp 1. The v8 Bold/small-size AA samples
+ * retired and the other sections tightened to keep the page
+ * inside the common area.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -94,12 +104,22 @@ LOG_MODULE_REGISTER(touchtest);
 /* Custom-font comparison samples for pattern page 2 (v8). The
  * font objects are compiled by the esb_nape_rx shield library
  * (its src/fonts/), so they are only declared here — this file
- * must not reference them when the config is off. */
+ * must not reference them when the config is off. Page 2 lines
+ * up the bpp axis of the same SemiBold face: bpp 8 (via the
+ * ESB_NAPE_RX_FONT_BPP8 switch, like the status UI), bpp 4 and
+ * bpp 1 at 20 px, plus 14 px at bpp 1. */
 #if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
-LV_FONT_DECLARE(lv_font_montserrat_sb_12);
-LV_FONT_DECLARE(lv_font_montserrat_sb_14);
 LV_FONT_DECLARE(lv_font_montserrat_sb_20);
-LV_FONT_DECLARE(lv_font_montserrat_b_20);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_14);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_20);
+#if defined(CONFIG_ESB_NAPE_RX_FONT_BPP8)
+LV_FONT_DECLARE(lv_font_montserrat_sb8_20);
+#define P2_SB_FONT_20 (&lv_font_montserrat_sb8_20)
+#define P2_SB20_CAPTION "BPP8"
+#else
+#define P2_SB_FONT_20 (&lv_font_montserrat_sb_20)
+#define P2_SB20_CAPTION "BPP4"
+#endif
 #endif
 
 /* The bus that hosts the touch node (i2c1 via &xiao_i2c in v4) —
@@ -406,39 +426,44 @@ static void build_pattern2_screen(void) {
     y += 9;
 #if LV_FONT_UNSCII_16
     p2_label(pattern2_scr, &lv_font_unscii_16, "UNSCII16 ABCDE", 6, y, 0xFFFFFF);
-    y += 17;
+    y += 16;
 #endif
 
     /* 2. AA control text: the same words in the stock Montserrat
      * (bpp 4). The strings are trimmed to fit 240 px at these
      * sizes (the full "... 0123456789" tail only fits at 14). */
     p2_label(pattern2_scr, &lv_font_montserrat_14, "MONTSERRAT ABCDEFG 0123", 6, y, 0xFFFFFF);
-    y += 15;
+    y += 14;
     p2_label(pattern2_scr, &lv_font_montserrat_20, "MONTSERRAT ABC", 6, y, 0xFFFFFF);
-    y += 19;
+    y += 18;
 
 #if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
-    /* 2b. Custom-font samples (v8): the SemiBold the Deck UI
-     * uses, and a Bold for comparison, at the same 20 px as the
-     * stock control above. The SemiBold line drops the digit
-     * tail: at SemiBold advances the full string measures
-     * ~270 px and would run off the 240 px stage (the Bold line
-     * at ~220 px fits whole). */
-    p2_label(pattern2_scr, &lv_font_montserrat_sb_20, "SEMIBOLD ABCDEFG", 6, y, 0xFFFFFF);
-    y += 19;
-    p2_label(pattern2_scr, &lv_font_montserrat_b_20, "BOLD ABCDEFG 0123", 6, y, 0xFFFFFF);
-    y += 20;
-
-    /* 2c. Small-size SemiBold samples: does the heavier face
-     * make the sizes below the UI's 16 px floor usable again?
-     * (Expectation: 14 is the floor.) Judging samples only —
-     * the production UI stays at 16/20/28 until this is judged
-     * on hardware. Both strings fit whole at these sizes
-     * (~204 px at 14, ~173 px at 12, measured from the TTF). */
-    p2_label(pattern2_scr, &lv_font_montserrat_sb_14, "SEMIBOLD14 ABCDEFG 0123", 6, y, 0xFFFFFF);
-    y += 16;
-    p2_label(pattern2_scr, &lv_font_montserrat_sb_12, "SEMIBOLD12 ABCDEFG 0123", 6, y, 0xFFFFFF);
-    y += 15;
+    /* 2b. The bpp axis in one glance (v9): the same SemiBold
+     * 20 sample ("ABCDEFG 0123", 152 px from the TTF) at
+     * bpp 8 (via the switch — the UI default of this build),
+     * bpp 4 and bpp 1, plus SemiBold 14 at bpp 1 (107 px,
+     * started further right to clear its longer caption).
+     * Captions are unscii_8 so they carry no AA of their own.
+     * Why both directions: partial-coverage pixels show color
+     * fringes to the naked eye on this panel (2026-11-06), so
+     * MORE alpha steps may look worse and bpp 1 — no
+     * intermediate pixels at all — is a fix candidate, not
+     * just a control. (With the BPP8 switch off, the first
+     * line falls back to bpp 4 and duplicates the second.)
+     * The v8 Bold 20 and small-size AA samples retired to make
+     * room; sections 1/3/4/5 are tightened by a few px each. */
+    p2_label(pattern2_scr, &lv_font_unscii_8, P2_SB20_CAPTION, 6, y + 6, 0xFFFFFF);
+    p2_label(pattern2_scr, P2_SB_FONT_20, "ABCDEFG 0123", 48, y, 0xFFFFFF);
+    y += 21;
+    p2_label(pattern2_scr, &lv_font_unscii_8, "BPP4", 6, y + 6, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_montserrat_sb_20, "ABCDEFG 0123", 48, y, 0xFFFFFF);
+    y += 21;
+    p2_label(pattern2_scr, &lv_font_unscii_8, "BPP1", 6, y + 6, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_montserrat_sb1_20, "ABCDEFG 0123", 48, y, 0xFFFFFF);
+    y += 21;
+    p2_label(pattern2_scr, &lv_font_unscii_8, "BPP1-14", 6, y + 3, 0xFFFFFF);
+    p2_label(pattern2_scr, &lv_font_montserrat_sb1_14, "ABCDEFG 0123", 70, y, 0xFFFFFF);
+    y += 17;
 #endif
 
     /* 3. Solid-gray stroke mimics: groups of 2 px / 3 px vertical
@@ -458,25 +483,25 @@ static void build_pattern2_screen(void) {
         const int32_t gx = 6 + g * 57;
 
         for (int b = 0; b < 5; b++) {
-            plain_rect(pattern2_scr, gx + bar_dx[b], y, bar_w[b], 12, grays[g]);
+            plain_rect(pattern2_scr, gx + bar_dx[b], y, bar_w[b], 10, grays[g]);
         }
-        p2_label(pattern2_scr, &lv_font_unscii_8, gray_names[g], gx + cap_dx[g], y + 13, 0xFFFFFF);
+        p2_label(pattern2_scr, &lv_font_unscii_8, gray_names[g], gx + cap_dx[g], y + 11, 0xFFFFFF);
     }
-    y += 23;
+    y += 20;
 
     /* 4. White Montserrat 20 blended over a solid mid-gray fill
      * instead of black: exercises the blend against a non-black
      * background. */
-    plain_rect(pattern2_scr, 6, y, 228, 24, 0x808080);
-    p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, y + 2, 0xFFFFFF);
-    y += 25;
+    plain_rect(pattern2_scr, 6, y, 228, 22, 0x808080);
+    p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, y + 1, 0xFFFFFF);
+    y += 23;
 
     /* 5. 16-step gray ramp: adjacent solid bars, black to white
      * in steps of 17 — mid-tone solids at fine granularity. */
     for (int i = 0; i < 16; i++) {
         const uint32_t v = (uint32_t)i * 17u;
 
-        plain_rect(pattern2_scr, 6 + i * 14, y, 14, 10, (v << 16) | (v << 8) | v);
+        plain_rect(pattern2_scr, 6 + i * 14, y, 14, 8, (v << 16) | (v << 8) | v);
     }
 
     /* BACK to pattern page 1, bottom-right like page 1's BACK. */

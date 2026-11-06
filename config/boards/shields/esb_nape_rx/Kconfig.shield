@@ -14,3 +14,19 @@ config ESB_NAPE_RX_CUSTOM_FONT
 	  plain receiver build leaves this off and is unchanged.
 	  Reverting is a one-line conf change (the routing lives in
 	  the FONT_16/FONT_20/FONT_28 macros in src/status_screen.c).
+
+config ESB_NAPE_RX_FONT_BPP8
+	bool "Deck UI custom fonts at bpp 8 instead of bpp 4"
+	depends on ESB_NAPE_RX_CUSTOM_FONT
+	default n
+	help
+	  Route the status screen's FONT_16/FONT_20/FONT_28 macros
+	  (and the touchtest pattern page 2 SemiBold samples) to the
+	  bpp 8 conversion of the same Montserrat SemiBold fonts
+	  (sb8_* in src/fonts/, 256 alpha steps) instead of the
+	  bpp 4 conversion (sb_*, 16 alpha steps). On hardware the
+	  bpp 4 SemiBold smeared exactly like the stock font, so
+	  alpha resolution is the remaining font-side variable.
+	  Ladder: this on = SemiBold bpp 8; this off + custom font
+	  on = SemiBold bpp 4; custom font off = stock LVGL
+	  Montserrat Medium.

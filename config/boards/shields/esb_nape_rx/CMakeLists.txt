@@ -16,5 +16,20 @@ if(CONFIG_SHIELD_ESB_NAPE_RX)
     zephyr_library_sources(src/fonts/lv_font_montserrat_sb_20.c)
     zephyr_library_sources(src/fonts/lv_font_montserrat_sb_28.c)
     zephyr_library_sources(src/fonts/lv_font_montserrat_b_20.c)
+    # bpp 1 SemiBold (pattern page 2 samples only, never routed
+    # into the UI; unreferenced in the disptest build and
+    # garbage-collected there).
+    zephyr_library_sources(src/fonts/lv_font_montserrat_sb1_14.c)
+    zephyr_library_sources(src/fonts/lv_font_montserrat_sb1_20.c)
+    # bpp 8 conversion of the same SemiBold set; only linked
+    # when the BPP8 switch selects it (it depends on the
+    # custom-font switch, so this nests safely inside).
+    if(CONFIG_ESB_NAPE_RX_FONT_BPP8)
+      zephyr_library_sources(src/fonts/lv_font_montserrat_sb8_12.c)
+      zephyr_library_sources(src/fonts/lv_font_montserrat_sb8_14.c)
+      zephyr_library_sources(src/fonts/lv_font_montserrat_sb8_16.c)
+      zephyr_library_sources(src/fonts/lv_font_montserrat_sb8_20.c)
+      zephyr_library_sources(src/fonts/lv_font_montserrat_sb8_28.c)
+    endif()
   endif()
 endif()

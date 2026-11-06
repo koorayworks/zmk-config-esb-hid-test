@@ -59,13 +59,23 @@ LOG_MODULE_REGISTER(status_screen, LOG_LEVEL_INF);
  * With CONFIG_ESB_NAPE_RX_CUSTOM_FONT (the Deck builds) these are
  * the custom-converted Montserrat SemiBold fonts in src/fonts/ —
  * heavier strokes, because the stock Medium's antialiasing smears
- * on this panel at every size. Without it (plain esb_nape_rx),
+ * on this panel at every size. The SemiBold at bpp 4 smeared the
+ * same way on hardware, so CONFIG_ESB_NAPE_RX_FONT_BPP8 (on top
+ * of the custom-font switch) routes to the bpp 8 conversion of
+ * the same face — alpha resolution is the remaining font-side
+ * variable. Without the custom-font switch (plain esb_nape_rx),
  * the stock LVGL Montserrat is used exactly as before. */
 #if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
 #include "fonts/fonts_custom.h"
+#if defined(CONFIG_ESB_NAPE_RX_FONT_BPP8)
+#define FONT_16 (&lv_font_montserrat_sb8_16)
+#define FONT_20 (&lv_font_montserrat_sb8_20)
+#define FONT_28 (&lv_font_montserrat_sb8_28)
+#else
 #define FONT_16 (&lv_font_montserrat_sb_16)
 #define FONT_20 (&lv_font_montserrat_sb_20)
 #define FONT_28 (&lv_font_montserrat_sb_28)
+#endif
 #else
 #define FONT_16 (&lv_font_montserrat_16)
 #define FONT_20 (&lv_font_montserrat_20)

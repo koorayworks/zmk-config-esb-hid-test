@@ -19,6 +19,20 @@
  * 16/20/28 until then. Compiled in only when
  * CONFIG_ESB_NAPE_RX_CUSTOM_FONT=y (see ../status_screen.c for
  * the FONT_16/20/28 routing macros).
+ *
+ * The sb8_* set is the same SemiBold conversion at bpp 8 (256
+ * alpha steps instead of 16): on hardware the bpp 4 SemiBold
+ * smeared exactly like the stock font, so the alpha resolution
+ * is the next variable to test. Compiled in and selected only
+ * when CONFIG_ESB_NAPE_RX_FONT_BPP8=y (which depends on the
+ * custom-font switch).
+ *
+ * The sb1_* set is SemiBold at bpp 1 (no intermediate alpha
+ * steps at all), sizes 20/14, existing only as pattern page 2
+ * samples: partial-coverage pixels show color fringes to the
+ * naked eye on this panel, so the bpp axis is two-sided and
+ * bpp 1 is a fix candidate, not just a control. Never routed
+ * into the UI switch.
  */
 #ifndef ESB_NAPE_FONTS_CUSTOM_H
 #define ESB_NAPE_FONTS_CUSTOM_H
@@ -30,6 +44,13 @@ LV_FONT_DECLARE(lv_font_montserrat_sb_14);
 LV_FONT_DECLARE(lv_font_montserrat_sb_16);
 LV_FONT_DECLARE(lv_font_montserrat_sb_20);
 LV_FONT_DECLARE(lv_font_montserrat_sb_28);
+LV_FONT_DECLARE(lv_font_montserrat_sb8_12);
+LV_FONT_DECLARE(lv_font_montserrat_sb8_14);
+LV_FONT_DECLARE(lv_font_montserrat_sb8_16);
+LV_FONT_DECLARE(lv_font_montserrat_sb8_20);
+LV_FONT_DECLARE(lv_font_montserrat_sb8_28);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_14);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_20);
 LV_FONT_DECLARE(lv_font_montserrat_b_20);
 
 #endif /* ESB_NAPE_FONTS_CUSTOM_H */
