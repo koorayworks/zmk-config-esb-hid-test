@@ -1,5 +1,5 @@
 /*
- * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v4.
+ * Touch bring-up test for the Nape Deck (esb_nape_touchtest only) — v11.
  *
  * v1–v3 all probed i2c0 (hidden pads P1.00/P1.10, then P1.02/P1.04,
  * polling, then driver-pulsed reset) and never saw a single ACK.
@@ -92,6 +92,36 @@
  * shield's conf purely so the first sample line keeps showing
  * the bpp 8 conversion for comparison.
  *
+ * v11 adds LIVE screen rotation (user requirement 2026-11-07:
+ * rotation must switch live, like the Nape's trackball
+ * orientation — no reboot-to-apply). A ROTATE button on the tap
+ * screen cycles 0 -> 90 -> 180 -> 270 -> 0 at runtime. Route
+ * (source-verified in ~/workspace/esb-hid/rotation-design.md's
+ * follow-up): LVGL's own software rotation cannot work here —
+ * lv_refr.c never rotates pixels; rotation is the flush
+ * driver's job (fb drivers call lv_display_rotate_area() +
+ * lv_draw_sw_rotate()), and the Zephyr glue's flush callback is
+ * a raw passthrough. Instead the panel itself rotates: the
+ * forked ST7789V driver in zmk-feature-esb-hid implements
+ * display_set_orientation() (MADCTL + margins), and the app
+ * then re-frames LVGL around the rotated panel with
+ * lv_display_set_resolution(), which resizes every screen and
+ * forces a full re-render in the new logical frame (PARTIAL
+ * render mode reshapes the draw buffer per area, so the
+ * init-time buffer geometry is not a constraint). Touch follows
+ * because the Zephyr pointer glue transforms every event
+ * against the capabilities cached in the display's user data
+ * (struct lvgl_disp_data, <lvgl_display.h>) — the rotation work
+ * updates that cache (orientation + x/y resolution) in the same
+ * step. All of it runs as a work item on the display queue, so
+ * it cannot interleave with an LVGL refresh or with the button
+ * event that triggered it. The three screens are rebuilt at the
+ * new resolution (their layouts already read the live
+ * resolution) and the current one is reloaded. In the
+ * landscape-pattern variant the ROTATE button is compiled out:
+ * that build's boot geometry comes from DT, not from this
+ * runtime state, so cycling would start from a lie.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -100,10 +130,12 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/display.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
 
 #include <lvgl.h>
+#include <lvgl_display.h>
 #include <zmk/display.h>
 
 LOG_MODULE_REGISTER(touchtest);
@@ -171,6 +203,38 @@ static lv_obj_t *pattern2_scr;
 static lv_obj_t *tap_label;
 static unsigned int tap_count;
 
+/* Which of the three screens is on display (0 tap, 1 pattern,
+ * 2 pattern 2); the rotation work reloads the same page after
+ * rebuilding all screens at the new resolution. */
+static int cur_scr;
+
+/* Live rotation state (v11). rot_idx indexes the cycle; the
+ * logical resolution follows from it (odd steps swap the axes). */
+static const struct device *const panel = DEVICE_DT_GET(DT_NODELABEL(st7789v));
+static const enum display_orientation rot_cycle[4] = {
+    DISPLAY_ORIENTATION_NORMAL,
+    DISPLAY_ORIENTATION_ROTATED_90,
+    DISPLAY_ORIENTATION_ROTATED_180,
+    DISPLAY_ORIENTATION_ROTATED_270,
+};
+static uint8_t rot_idx;
+
+static void rotate_work_handler(struct k_work *work);
+static K_WORK_DEFINE(rotate_work, rotate_work_handler);
+
+static void rotate_btn_event_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    /* Only queue the switch: the screens cannot be rebuilt from
+     * inside this event (the button itself is on one of them),
+     * and the display queue serializes the work against LVGL
+     * refreshes. */
+    k_work_submit_to_queue(zmk_display_work_q(), &rotate_work);
+    LOG_INF("TOUCHTEST rotate queued");
+}
+
 static void tap_btn_event_cb(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_PRESSED) {
         return;
@@ -186,6 +250,7 @@ static void pattern_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    cur_scr = 1;
     lv_scr_load(pattern_scr);
     LOG_INF("TOUCHTEST pattern screen loaded");
 }
@@ -195,6 +260,7 @@ static void back_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    cur_scr = 0;
     lv_scr_load(tap_scr);
     LOG_INF("TOUCHTEST tap screen loaded");
 }
@@ -204,6 +270,7 @@ static void next_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    cur_scr = 2;
     lv_scr_load(pattern2_scr);
     LOG_INF("TOUCHTEST pattern 2 screen loaded");
 }
@@ -213,6 +280,7 @@ static void back2_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    cur_scr = 1;
     lv_scr_load(pattern_scr);
     LOG_INF("TOUCHTEST pattern screen loaded");
 }
@@ -276,11 +344,28 @@ static void build_tap_screen(void) {
     lv_label_set_text(tap_label, "TAP TEST: 0");
     lv_obj_center(tap_label);
 
+    /* In the 240-row orientations the column compresses so the
+     * ROTATE row fits below PATTERN; at 280 rows the layout is
+     * the historical one plus the new row. */
+    const int32_t scr_h = lv_display_get_vertical_resolution(NULL);
+    const bool compact = (scr_h <= 240);
+
     lv_obj_t *pattern_btn = styled_button(tap_scr, 0x338833, pattern_btn_event_cb);
 
-    lv_obj_set_size(pattern_btn, 220, 56);
-    lv_obj_align(pattern_btn, LV_ALIGN_TOP_MID, 0, 168);
+    lv_obj_set_size(pattern_btn, 220, compact ? 40 : 56);
+    lv_obj_align(pattern_btn, LV_ALIGN_TOP_MID, 0, compact ? 152 : 168);
     button_label(pattern_btn, "PATTERN", &lv_font_montserrat_20);
+
+#if !defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
+    /* Live rotation (v11). Compiled out of the landscape
+     * variant: its boot geometry is DT-driven, so this runtime
+     * cycle state would start out of sync with the panel. */
+    lv_obj_t *rotate_btn = styled_button(tap_scr, 0xCC7722, rotate_btn_event_cb);
+
+    lv_obj_set_size(rotate_btn, 220, compact ? 36 : 40);
+    lv_obj_align(rotate_btn, LV_ALIGN_TOP_MID, 0, compact ? 200 : 232);
+    button_label(rotate_btn, "ROTATE", &lv_font_montserrat_20);
+#endif
 }
 
 #define CHECKER_SIZE 72
@@ -520,6 +605,64 @@ static void build_pattern2_screen(void) {
     button_label(back_btn, "BACK", &lv_font_montserrat_14);
 }
 
+/* Live rotation switch (v11). Runs on the display queue, never
+ * concurrently with an LVGL refresh or a touch event. Order:
+ * panel first (MADCTL + margins via the forked driver), then the
+ * pointer glue's cached capabilities (it transforms every event
+ * against that cache, read live), then LVGL's logical frame
+ * (resizes all screens and forces a full re-render), then a
+ * rebuild of the three test screens at the new resolution. */
+static void rotate_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+
+    rot_idx = (rot_idx + 1) & 0x3;
+    const enum display_orientation zo = rot_cycle[rot_idx];
+    const int32_t w = (rot_idx & 1) ? 280 : 240;
+    const int32_t h = (rot_idx & 1) ? 240 : 280;
+
+    if (!device_is_ready(panel)) {
+        LOG_ERR("TOUCHTEST rotate: panel not ready");
+        return;
+    }
+
+    int ret = display_set_orientation(panel, zo);
+
+    if (ret != 0) {
+        LOG_ERR("TOUCHTEST rotate: set_orientation -> %d", ret);
+        return;
+    }
+
+    lv_display_t *disp = lv_display_get_default();
+    struct lvgl_disp_data *dd = lv_display_get_user_data(disp);
+
+    if (dd != NULL) {
+        dd->cap.current_orientation = zo;
+        dd->cap.x_resolution = w;
+        dd->cap.y_resolution = h;
+    }
+    lv_display_set_resolution(disp, w, h);
+
+    lv_obj_t *old_tap = tap_scr;
+    lv_obj_t *old_pattern = pattern_scr;
+    lv_obj_t *old_pattern2 = pattern2_scr;
+
+    build_tap_screen();
+    build_pattern_screen();
+    build_pattern2_screen();
+    lv_scr_load(cur_scr == 2 ? pattern2_scr : (cur_scr == 1 ? pattern_scr : tap_scr));
+    if (old_tap != NULL) {
+        lv_obj_delete(old_tap);
+    }
+    if (old_pattern != NULL) {
+        lv_obj_delete(old_pattern);
+    }
+    if (old_pattern2 != NULL) {
+        lv_obj_delete(old_pattern2);
+    }
+
+    LOG_INF("TOUCHTEST rotate -> %d deg (%dx%d)", rot_idx * 90, (int)w, (int)h);
+}
+
 static void screen_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
@@ -531,9 +674,11 @@ static void screen_work_handler(struct k_work *work) {
     /* Landscape bisect variant: show the pattern immediately.
      * Touch coordinates do not map onto the rotated geometry, so
      * tap navigation is meaningless in this build anyway. */
+    cur_scr = 1;
     lv_scr_load(pattern_scr);
     LOG_INF("TOUCHTEST pattern screen loaded");
 #else
+    cur_scr = 0;
     lv_scr_load(tap_scr);
     LOG_INF("TOUCHTEST tap screen loaded");
 #endif
