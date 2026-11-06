@@ -140,3 +140,30 @@ lv_font_conv --font Montserrat-SemiBold.ttf --size 14 --bpp 1 \
   -r 0x20-0x7F -r 0xB0 -r 0x2022 \
   --lv-font-name lv_font_montserrat_sb1_14 -o lv_font_montserrat_sb1_14.c
 ```
+
+## bpp 1 is the production UI font (2026-11-06, later)
+
+Verdict the same day: the user hardware-verified that the
+bpp 1 samples render clean while the bpp 4 and bpp 8
+conversions (and the stock font) smear — partial-coverage
+pixels come out colored on this panel, so intermediate tones
+were the smear source all along. Sizes 16 and 28 were then
+converted at bpp 1 to complete the UI set, and
+`CONFIG_ESB_NAPE_RX_FONT_BPP1=y` (top of the FONT_* ladder in
+`../status_screen.c`, above BPP8) selects sb1_16/20/28 in the
+disptest and touchtest confs. sb1_14 remains a pattern page 2
+sample only.
+
+```
+lv_font_conv --font Montserrat-SemiBold.ttf --size 16 --bpp 1 \
+  --format lvgl --no-compress --no-prefilter --force-fast-kern-format \
+  --lv-include lvgl.h \
+  -r 0x20-0x7F -r 0xB0 -r 0x2022 \
+  --lv-font-name lv_font_montserrat_sb1_16 -o lv_font_montserrat_sb1_16.c
+
+lv_font_conv --font Montserrat-SemiBold.ttf --size 28 --bpp 1 \
+  --format lvgl --no-compress --no-prefilter --force-fast-kern-format \
+  --lv-include lvgl.h \
+  -r 0x20-0x7F -r 0xB0 -r 0x2022 \
+  --lv-font-name lv_font_montserrat_sb1_28 -o lv_font_montserrat_sb1_28.c
+```

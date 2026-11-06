@@ -85,6 +85,13 @@
  * retired and the other sections tightened to keep the page
  * inside the common area.
  *
+ * v10: verdict in (2026-11-06) — the bpp 1 samples render clean
+ * on hardware, bpp 4/8 smear, so the status UI switched to the
+ * bpp 1 set via ESB_NAPE_RX_FONT_BPP1 (top of its ladder). Page
+ * 2 itself is unchanged: the BPP8 switch stays on in this
+ * shield's conf purely so the first sample line keeps showing
+ * the bpp 8 conversion for comparison.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -106,8 +113,9 @@ LOG_MODULE_REGISTER(touchtest);
  * (its src/fonts/), so they are only declared here — this file
  * must not reference them when the config is off. Page 2 lines
  * up the bpp axis of the same SemiBold face: bpp 8 (via the
- * ESB_NAPE_RX_FONT_BPP8 switch, like the status UI), bpp 4 and
- * bpp 1 at 20 px, plus 14 px at bpp 1. */
+ * ESB_NAPE_RX_FONT_BPP8 switch), bpp 4 and bpp 1 at 20 px, plus
+ * 14 px at bpp 1. (The status UI's own default is bpp 1 since
+ * v10 — this page keeps all three for comparison.) */
 #if defined(CONFIG_ESB_NAPE_RX_CUSTOM_FONT)
 LV_FONT_DECLARE(lv_font_montserrat_sb_20);
 LV_FONT_DECLARE(lv_font_montserrat_sb1_14);

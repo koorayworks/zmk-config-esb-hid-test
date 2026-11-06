@@ -28,11 +28,14 @@
  * custom-font switch).
  *
  * The sb1_* set is SemiBold at bpp 1 (no intermediate alpha
- * steps at all), sizes 20/14, existing only as pattern page 2
- * samples: partial-coverage pixels show color fringes to the
- * naked eye on this panel, so the bpp axis is two-sided and
- * bpp 1 is a fix candidate, not just a control. Never routed
- * into the UI switch.
+ * steps at all): partial-coverage pixels show color fringes to
+ * the naked eye on this panel, and on 2026-11-06 the user
+ * hardware-verified that the bpp 1 pattern samples render clean
+ * while bpp 4/8 smear — intermediate tones were the source.
+ * Sizes 16/20/28 are the production UI set, selected when
+ * CONFIG_ESB_NAPE_RX_FONT_BPP1=y (top of the ladder in
+ * ../status_screen.c, above BPP8); sb1_14 stays a pattern
+ * page 2 sample only.
  */
 #ifndef ESB_NAPE_FONTS_CUSTOM_H
 #define ESB_NAPE_FONTS_CUSTOM_H
@@ -50,7 +53,9 @@ LV_FONT_DECLARE(lv_font_montserrat_sb8_16);
 LV_FONT_DECLARE(lv_font_montserrat_sb8_20);
 LV_FONT_DECLARE(lv_font_montserrat_sb8_28);
 LV_FONT_DECLARE(lv_font_montserrat_sb1_14);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_16);
 LV_FONT_DECLARE(lv_font_montserrat_sb1_20);
+LV_FONT_DECLARE(lv_font_montserrat_sb1_28);
 LV_FONT_DECLARE(lv_font_montserrat_b_20);
 
 #endif /* ESB_NAPE_FONTS_CUSTOM_H */
