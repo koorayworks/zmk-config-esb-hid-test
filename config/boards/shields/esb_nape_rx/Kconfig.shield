@@ -32,6 +32,22 @@ config ESB_NAPE_RX_FONT_BPP8
 	  SemiBold bpp 4; custom font off = stock LVGL Montserrat
 	  Medium.
 
+config ESB_NAPE_RX_ROTATION
+	bool "Deck display orientation: live rotation with settings persistence"
+	depends on SHIELD_ESB_NAPE_RX
+	default n
+	help
+	  Live 90-degree-step display rotation for the Deck UI
+	  (phase 2). src/orientation.c persists the orientation
+	  index in settings ("deck/orientation"), applies it at
+	  boot before LVGL init (SYS_INIT APPLICATION 50), and
+	  cycles it live on request from the status screen (the
+	  staged panel/reframe switch proven by touchtest v11.4).
+	  Requires the forked ST7789V driver from
+	  zmk-feature-esb-hid (display_set_orientation). Enabled
+	  by the disptest shield conf; the plain receiver build
+	  leaves this off and is unchanged.
+
 config ESB_NAPE_RX_FONT_BPP1
 	bool "Deck UI custom fonts at bpp 1 instead of bpp 4/8"
 	depends on ESB_NAPE_RX_CUSTOM_FONT

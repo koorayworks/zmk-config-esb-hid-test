@@ -50,6 +50,10 @@
 #include <esb_hid.h>
 #include <esb_hid_status.h>
 
+#if defined(CONFIG_ESB_NAPE_RX_ROTATION)
+#include "deck_orientation.h"
+#endif
+
 LOG_MODULE_REGISTER(status_screen, LOG_LEVEL_INF);
 #include <zmk/battery.h>
 #include <zmk/display/status_screen.h>
@@ -235,9 +239,13 @@ static void set_gauge_width_if_changed(lv_obj_t *obj, lv_coord_t w) {
 
 /* ---- Change-guarded style / position setters ----
  * A tiny cache of the last value applied per (object, part,
- * property). All screen objects live for the whole run (pages are
- * created once, never destroyed), so keying on the object pointer
- * is safe. When the cache fills up the helpers degrade to applying
+ * property). In the original single-build UI all screen objects
+ * lived for the whole run, so keying on the object pointer was
+ * safe. Live rotation (phase 2) rebuilds the screen and can
+ * recycle a dead object's address for a new one, so
+ * zmk_display_status_screen() clears this cache (and the gauge
+ * width cache above) on every build before the first refresh.
+ * When the cache fills up the helpers degrade to applying
  * unconditionally, never to skipping a needed write. */
 
 enum style_prop_kind {
@@ -415,6 +423,23 @@ static void show_page(enum deck_page page) {
                                     lv_color_hex(active ? 0xFFFFFF : COL_SUB), LV_PART_MAIN);
     }
 }
+
+#if defined(CONFIG_ESB_NAPE_RX_ROTATION)
+/* Rotation entry point (phase 2): a long press on the STATUS
+ * tab cycles the display orientation 0 -> 90 -> 180 -> 270 ->
+ * 0. A plain click on the same tab just shows the STATUS page
+ * (tab_status_cb below). LV_EVENT_LONG_PRESSED fires while the
+ * finger is still down (at the indev's long-press time, 400 ms
+ * by default), so the switch starts under the user's finger;
+ * the click that follows on release is harmless: it just
+ * re-shows the STATUS page on the rebuilt screen, and
+ * deck_orientation_cycle_next() itself drops requests that
+ * arrive while a switch is still in flight. */
+static void tab_status_long_pressed_cb(lv_event_t *e) {
+    ARG_UNUSED(e);
+    deck_orientation_cycle_next();
+}
+#endif
 
 static void tab_status_cb(lv_event_t *e) {
     ARG_UNUSED(e);
@@ -1030,6 +1055,11 @@ static void build_tab_bar(lv_obj_t *stage) {
         lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
         lv_obj_add_event_cb(btn, cbs[i], LV_EVENT_CLICKED, NULL);
+#if defined(CONFIG_ESB_NAPE_RX_ROTATION)
+        if (i == 0) {
+            lv_obj_add_event_cb(btn, tab_status_long_pressed_cb, LV_EVENT_LONG_PRESSED, NULL);
+        }
+#endif
         tab_btns[i] = btn;
 
         lv_obj_t *label = lv_label_create(btn);
@@ -1042,6 +1072,12 @@ static void build_tab_bar(lv_obj_t *stage) {
 }
 
 lv_obj_t *zmk_display_status_screen() {
+    /* A live-rotation rebuild discards the previous object tree;
+     * do not let pointer-keyed change guards mistake a recycled
+     * address for the same object and skip its first refresh. */
+    memset(style_prop_cache, 0, sizeof(style_prop_cache));
+    batt_gauge_applied_w = -1;
+
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
@@ -1071,7 +1107,13 @@ lv_obj_t *zmk_display_status_screen() {
 
     show_page(PAGE_STATUS);
 
-    lv_timer_create(refresh_cb, 500, NULL);
+    /* The refresh timer is not tied to a screen object; create
+     * it once, not once per rotation rebuild. */
+    static bool refresh_timer_created;
+
+    if (!refresh_timer_created) {
+        refresh_timer_created = lv_timer_create(refresh_cb, 500, NULL) != NULL;
+    }
     refresh_cb(NULL);
 
     return screen;

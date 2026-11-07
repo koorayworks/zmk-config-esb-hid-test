@@ -6,6 +6,14 @@ if(CONFIG_SHIELD_ESB_NAPE_RX)
   zephyr_library_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
   zephyr_library_sources(src/status_screen.c)
   zephyr_library_sources(src/brightness.c)
+  # Live display orientation (phase 2): settings persistence,
+  # boot-time apply before LVGL init, and the staged live
+  # switch. Only for the builds that opt in via
+  # ESB_NAPE_RX_ROTATION (the disptest Deck build); the plain
+  # receiver build compiles none of it.
+  if(CONFIG_ESB_NAPE_RX_ROTATION)
+    zephyr_library_sources(src/orientation.c)
+  endif()
   # Custom-converted Montserrat SemiBold fonts (src/fonts/), only
   # for the Deck builds that opt in via ESB_NAPE_RX_CUSTOM_FONT;
   # the plain receiver build keeps the stock LVGL Montserrat.
