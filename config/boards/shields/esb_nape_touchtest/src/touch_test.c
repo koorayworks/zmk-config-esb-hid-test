@@ -224,6 +224,44 @@
  * brackets every rebuild step, so if the heap is ever
  * again the wall, the numbers say so instead of silence.
  *
+ * v11.5 (fifth hardware verdict, adjudicated): the
+ * photos from the v11.4 run — stack reading reversed in
+ * landscape, black bands, touch disagreeing with the
+ * drawn buttons — traced to the forked driver, not to
+ * this file. The fork's MADCTL table (inherited from
+ * Prospector) assigns the ST7789V standard rotation
+ * bytes one step off from the Zephyr convention the
+ * pointer glue implements: its ROTATED_90 wrote
+ * MY|MV (0xA0, the standard 270) and its ROTATED_270
+ * wrote MX|MV (0x60, the standard 90 — the byte the
+ * patternls build proves on this panel), so at 90/270
+ * the drawn image sat 180 degrees in-frame away from
+ * the logical frame LVGL and the touch transform used.
+ * The fork now writes the standard table (see
+ * zmk-feature-esb-hid's display_st7789v.c). This file's
+ * tap-screen geometry was audited against the photos
+ * and is NOT the cause: in the logical frame the column
+ * stacks TAP/PATTERN/ROTATE top-down and spans 88-89%
+ * of the height at both resolutions, which cannot
+ * produce a reversed stack or a band. (The "180" photo
+ * state — portrait content covering ~75% of the panel
+ * with a band — matches a portrait logical frame being
+ * scanned under an MV landscape MADCTL, 240 of 320
+ * GRAM rows: an off-by-one state, not the 180 chain,
+ * whose MADCTL, margins and glue formula all check
+ * out.) One genuine app-side defect did come out of
+ * the audit, on pattern page 1: its content metrics
+ * switched on the compile-time LANDSCAPE_PATTERN
+ * config instead of the live resolution, so in this
+ * build's runtime landscape the SHARP 28 sample
+ * (y=235, ~28 px tall) ran past the 240-row bottom
+ * edge; the compact metrics are now chosen from the
+ * live height, which also leaves the landscape-pattern
+ * variant (boot height 240) with the values it always
+ * had. Pattern page 2 audited clean (BACK is
+ * resolution-relative and the cursor-stacked sections
+ * end by y=200 at both heights).
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -559,20 +597,21 @@ static void build_pattern_screen(void) {
         plain_rect(pattern_scr, 6, 86 + i * 8, 60, 1, 0xFFFFFF);
     }
 
-    /* Pure color bars, full width. In the landscape variant the
-     * vertical rhythm (bars and text lines) is compacted so that
-     * everything still fits, in 240 rows instead of 280. */
+    /* Pure color bars, full width. In the 240-row orientations
+     * the vertical rhythm (bars and text lines) is compacted so
+     * that everything still fits. The choice follows the LIVE
+     * height (v11.5): it used to switch on the compile-time
+     * LANDSCAPE_PATTERN config, which left the runtime-rotation
+     * build laying a landscape screen out with portrait metrics
+     * (the SHARP 28 sample ran past the bottom edge). The
+     * landscape-pattern variant boots at 240 rows, so it picks
+     * the same compact values it always had. */
     static const uint32_t bar_colors[] = {0xFF0000, 0x00FF00, 0x0000FF,
                                           0xFFFFFF, 0x808080, 0x000000};
-#if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
-    const int32_t bar_y0 = 110;
-    const int32_t bar_step = 8;
-    const int32_t bar_h = 7;
-#else
-    const int32_t bar_y0 = 112;
-    const int32_t bar_step = 10;
-    const int32_t bar_h = 9;
-#endif
+    const bool compact = (H <= 240);
+    const int32_t bar_y0 = compact ? 110 : 112;
+    const int32_t bar_step = compact ? 8 : 10;
+    const int32_t bar_h = compact ? 7 : 9;
 
     for (int i = 0; i < 6; i++) {
         plain_rect(pattern_scr, 6, bar_y0 + i * bar_step, W - 12, bar_h, bar_colors[i]);
@@ -589,13 +628,10 @@ static void build_pattern_screen(void) {
         {&lv_font_montserrat_20, "SHARP 20"},
         {&lv_font_montserrat_28, "SHARP 28"},
     };
-#if defined(CONFIG_ESB_NAPE_TOUCHTEST_LANDSCAPE_PATTERN)
-    static const int32_t advances[] = {13, 15, 21, 29};
-    int32_t ty = 160;
-#else
-    static const int32_t advances[] = {15, 19, 25, 31};
-    int32_t ty = 176;
-#endif
+    static const int32_t advances_tall[] = {15, 19, 25, 31};
+    static const int32_t advances_compact[] = {13, 15, 21, 29};
+    const int32_t *advances = compact ? advances_compact : advances_tall;
+    int32_t ty = compact ? 160 : 176;
 
     for (int i = 0; i < 4; i++) {
         lv_obj_t *label = lv_label_create(pattern_scr);
@@ -729,7 +765,7 @@ static void build_pattern2_screen(void) {
     /* 4. White Montserrat 20 blended over a solid mid-gray fill
      * instead of black: exercises the blend against a non-black
      * background. */
-    plain_rect(pattern2_scr, 6, y, 228, 22, 0x808080);
+    plain_rect(pattern2_scr, 6, y, W - 12, 22, 0x808080);
     p2_label(pattern2_scr, &lv_font_montserrat_20, "TEXT ON GRAY", 12, y + 1, 0xFFFFFF);
     y += 23;
 
