@@ -6,8 +6,23 @@
 #   west update
 #   west zephyr-export
 # Then run this script from the repository root.
+#
+# Usage:
+#   ./build-local.sh            build all targets
+#   ./build-local.sh <target>   build only one target:
+#                               nickey | kozakura | tentalice | nape-rx |
+#                               disptest | touchtest | patternls
 set -euo pipefail
 cd "$(dirname "$0")"
+
+ONLY="${1:-}"
+case "$ONLY" in
+  ""|nickey|kozakura|tentalice|nape-rx|disptest|touchtest|patternls) ;;
+  *) echo "unknown target: $ONLY" >&2
+     echo "targets: nickey kozakura tentalice nape-rx disptest touchtest patternls" >&2
+     exit 1 ;;
+esac
+want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
 BOARD="${BOARD:-xiao_ble/nrf52840}"
 ZMK_APP="${ZMK_APP:-$PWD/zmk/app}"
@@ -26,65 +41,93 @@ ZMK_APP="${ZMK_APP:-$PWD/zmk/app}"
 # settings, so the module's SETTINGS backend fell back to NONE and a
 # pairing-assigned slot would not persist across reboots (Step 2
 # follow-up, verified: //zmk yields CONFIG_SETTINGS_NVS=y).
+if want nickey; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nickey-tx -- \
   -DSHIELD=esb_nickey_tx -DZMK_CONFIG="$PWD/config"
+fi
 
 # koZakura TX: real koZakura48 left-half PCB as a standalone ESB TX
 # (added 2026-10-31 for the Step 2 multi-device work).
 # Same xiao_ble//zmk rationale as Nickey above (NVS persistence).
+if want kozakura; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/kozakura-tx -- \
   -DSHIELD=esb_kozakura_tx -DZMK_CONFIG="$PWD/config"
+fi
 
 # TentAlice uses the xiao_ble//zmk board extension (like the original
 # zmk-config-tentalice build.yaml): it wires up UF2 boot-mode via
 # GPREGRET retention, without which &bootloader only resets.
+if want tentalice; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/tentalice-tx -- \
   -DSHIELD=esb_tentalice_tx -DZMK_CONFIG="$PWD/config"
+fi
 
 # Nape receiver: ESB RX + ST7789V display + CST816S touch + PAW3222.
 # Needs the xiao_ble//zmk variant (battery readout) like TentAlice.
+if want nape-rx; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-rx -- \
   -DSHIELD=esb_nape_rx -DZMK_CONFIG="$PWD/config"
+fi
 
 # Nape Deck production build: esb_nape_rx + esb_nape_disptest layered
 # on top. The unit wires the display like the Prospector adapter; the
 # trackball sensor is disabled (its pins collide with the display)
 # and the CST816T touch panel is integrated on i2c1 (Step 2).
+if want disptest; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-disptest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest" -DZMK_CONFIG="$PWD/config"
+fi
 
 # Nape touch test: disptest + esb_nape_touchtest layered on top.
 # Touch itself now comes from the disptest layer; this shield only
 # adds an I2C bus scan + on-screen tap counter / test pattern for
 # bring-up.
+if want touchtest; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-touchtest -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest" -DZMK_CONFIG="$PWD/config"
+fi
 
 # Nape landscape pattern test: touchtest + esb_nape_patternls
 # layered on top. Drives the panel in the Prospector Scanner's
 # landscape geometry (280x240, mdac 0x60, x-offset 20) and shows
 # the touchtest's static test pattern immediately at boot —
 # display-smear bisect for scan direction (round 3).
+if want patternls; then
 west build -p -s "$ZMK_APP" -b "xiao_ble//zmk" -d build/nape-patternls -- \
   "-DSHIELD=esb_nape_rx;esb_nape_disptest;esb_nape_touchtest;esb_nape_patternls" -DZMK_CONFIG="$PWD/config"
+fi
 
 mkdir -p firmware
 # cp build/tx/zephyr/zmk.uf2 firmware/esb_tx.uf2
 # cp build/rx/zephyr/zmk.uf2 firmware/esb_rx.uf2
+if want nickey; then
 cp build/nickey-tx/zephyr/zmk.uf2 firmware/esb_nickey_tx.uf2
+echo "Nickey TX: firmware/esb_nickey_tx.uf2"
+fi
+if want kozakura; then
 cp build/kozakura-tx/zephyr/zmk.uf2 firmware/esb_kozakura_tx.uf2
+echo "koZakura TX: firmware/esb_kozakura_tx.uf2"
+fi
+if want tentalice; then
 cp build/tentalice-tx/zephyr/zmk.uf2 firmware/esb_tentalice_tx.uf2
+echo "Tentalice TX: firmware/esb_tentalice_tx.uf2"
+fi
+if want nape-rx; then
 cp build/nape-rx/zephyr/zmk.uf2 firmware/esb_nape_rx.uf2
+echo "Nape RX: firmware/esb_nape_rx.uf2"
+fi
+if want disptest; then
 cp build/nape-disptest/zephyr/zmk.uf2 firmware/esb_nape_disptest.uf2
+echo "Nape display test: firmware/esb_nape_disptest.uf2"
+fi
+if want touchtest; then
 cp build/nape-touchtest/zephyr/zmk.uf2 firmware/esb_nape_touchtest.uf2
+echo "Nape touch test: firmware/esb_nape_touchtest.uf2"
+fi
+if want patternls; then
 cp build/nape-patternls/zephyr/zmk.uf2 firmware/esb_nape_patternls.uf2
+echo "Nape landscape pattern test: firmware/esb_nape_patternls.uf2"
+fi
 
 # echo "TX: firmware/esb_tx.uf2"
 # echo "RX: firmware/esb_rx.uf2"
-echo "Nickey TX: firmware/esb_nickey_tx.uf2"
-echo "koZakura TX: firmware/esb_kozakura_tx.uf2"
-echo "Tentalice TX: firmware/esb_tentalice_tx.uf2"
-echo "Nape RX: firmware/esb_nape_rx.uf2"
-echo "Nape display test: firmware/esb_nape_disptest.uf2"
-echo "Nape touch test: firmware/esb_nape_touchtest.uf2"
-echo "Nape landscape pattern test: firmware/esb_nape_patternls.uf2"
