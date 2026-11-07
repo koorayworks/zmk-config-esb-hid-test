@@ -193,6 +193,37 @@
  * and of the rebuild with a log + drain sleep, closing
  * the stranded-log hole as well.
  *
+ * v11.4 (fourth hardware verdict): v11.3's trail ran clean
+ * through the whole field application (fs1-fs5 done, the
+ * layout check all matched, "resolution now" printed) and
+ * then stopped right after "ROTATE: rb build pattern2" —
+ * "rb load" never printed and touch stayed dead. The span
+ * between those two log lines is exactly
+ * build_pattern2_screen(): the field application and
+ * lv_scr_load are both exonerated (lv_screen_load's
+ * internal only swaps act_scr, sends screen events and
+ * invalidates — no synchronous refresh exists in it to
+ * wedge in, and the load step was never even reached).
+ * What the rebuild did that no earlier code had: create
+ * three full screens (~90 objects; the pattern2 page
+ * alone ~59) while the three old screens and the
+ * production status tree still held the 49,152-byte LVGL
+ * sys_heap (CONFIG_LV_Z_MEM_POOL_SIZE /
+ * _MEM_POOL_SYS_HEAP). lv_obj_create() returns NULL on
+ * heap exhaustion (lv_obj_class_create_obj, LVGL 9.3) and
+ * every builder in this file dereferences the result
+ * unchecked; on this MCU that reads flash garbage or
+ * faults inside the display-queue thread, which starves
+ * the lowest-priority deferred logger — the observed
+ * total silence after the last drained line. v11.4
+ * inverts the rebuild order: load a fresh blank screen,
+ * delete the three old screens, THEN build, so the
+ * transient heap peak is one empty screen. An
+ * lv_mem_monitor() line (used % plus the heap's
+ * high-water mark, the two fields Zephyr's port fills)
+ * brackets every rebuild step, so if the heap is ever
+ * again the wall, the numbers say so instead of silence.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -820,6 +851,19 @@ static lv_obj_tree_walk_res_t rot_walk_cb(lv_obj_t *obj, void *user_data) {
     return LV_OBJ_TREE_WALK_NEXT;
 }
 
+/* Heap monitor (v11.4): the LVGL heap is a 49,152-byte
+ * sys_heap. Zephyr's lv_mem_monitor_core() fills only
+ * used_pct and max_used (the heap's high-water mark);
+ * max_used can only grow, so the rb-step trail records the
+ * rebuild's true peak allocation. */
+static void rot_log_mem(const char *tag) {
+    lv_mem_monitor_t mon;
+
+    lv_mem_monitor(&mon);
+    LOG_INF("ROTATE: mem %s: used %u%%, max_used %u of 49152", tag, mon.used_pct,
+            (unsigned)mon.max_used);
+}
+
 static void rotate_frame_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
@@ -958,18 +1002,31 @@ static void rotate_frame_work_handler(struct k_work *work) {
     lv_obj_t *old_pattern = pattern_scr;
     lv_obj_t *old_pattern2 = pattern2_scr;
 
-    LOG_INF("ROTATE: rb build tap");
+    /* v11.4: free before build (see the header note). A blank
+     * screen takes over as the active screen, the three old
+     * screens are deleted, and only then are the new screens
+     * built — the rebuild's transient heap peak is one empty
+     * screen instead of three full ones. */
+    rot_log_mem("rb entry");
+    LOG_INF("ROTATE: rb load blank");
     k_msleep(ROTATE_LOG_DRAIN_MS);
-    build_tap_screen();
-    LOG_INF("ROTATE: rb build pattern");
+    lv_obj_t *blank_scr = lv_obj_create(NULL);
+
+    if (blank_scr == NULL) {
+        LOG_ERR("ROTATE: blank screen allocation failed - LVGL heap already "
+                "exhausted before the rebuild; aborting the switch");
+        rot_log_mem("rb abort");
+        LOG_INF("ROTATE: frame step exit");
+        k_msleep(ROTATE_LOG_DRAIN_MS);
+        return;
+    }
+    lv_obj_set_style_bg_color(blank_scr, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(blank_scr, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(blank_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_scr_load(blank_scr);
+    LOG_INF("ROTATE: rb load blank done");
     k_msleep(ROTATE_LOG_DRAIN_MS);
-    build_pattern_screen();
-    LOG_INF("ROTATE: rb build pattern2");
-    k_msleep(ROTATE_LOG_DRAIN_MS);
-    build_pattern2_screen();
-    LOG_INF("ROTATE: rb load");
-    k_msleep(ROTATE_LOG_DRAIN_MS);
-    lv_scr_load(cur_scr == 2 ? pattern2_scr : (cur_scr == 1 ? pattern_scr : tap_scr));
+
     LOG_INF("ROTATE: rb delete olds");
     k_msleep(ROTATE_LOG_DRAIN_MS);
     if (old_tap != NULL) {
@@ -981,6 +1038,43 @@ static void rotate_frame_work_handler(struct k_work *work) {
     if (old_pattern2 != NULL) {
         lv_obj_delete(old_pattern2);
     }
+    LOG_INF("ROTATE: rb delete olds done");
+    rot_log_mem("after delete olds");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: rb build tap");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    build_tap_screen();
+    LOG_INF("ROTATE: rb build tap done");
+    rot_log_mem("after build tap");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: rb build pattern");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    build_pattern_screen();
+    LOG_INF("ROTATE: rb build pattern done");
+    rot_log_mem("after build pattern");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: rb build pattern2");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    build_pattern2_screen();
+    LOG_INF("ROTATE: rb build pattern2 done");
+    rot_log_mem("after build pattern2");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: rb load");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    lv_scr_load(cur_scr == 2 ? pattern2_scr : (cur_scr == 1 ? pattern_scr : tap_scr));
+    LOG_INF("ROTATE: rb load done");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+
+    LOG_INF("ROTATE: rb delete blank");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
+    lv_obj_delete(blank_scr);
+    LOG_INF("ROTATE: rb delete blank done");
+    rot_log_mem("rb exit");
+    k_msleep(ROTATE_LOG_DRAIN_MS);
 
     LOG_INF("ROTATE: screens rebuilt + reloaded (cur_scr=%d), sequence complete", cur_scr);
     LOG_INF("TOUCHTEST rotate -> %d deg (%dx%d)", rot_idx * 90, (int)w, (int)h);
