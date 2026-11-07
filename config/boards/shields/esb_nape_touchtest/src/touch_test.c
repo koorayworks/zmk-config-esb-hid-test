@@ -262,6 +262,22 @@
  * resolution-relative and the cursor-stacked sections
  * end by y=200 at both heights).
  *
+ * v11.6 (sixth hardware verdict): 90/270 check out after
+ * the fork's MADCTL fix, but at 180 the drawn buttons do
+ * not respond where they are drawn — the user has to press
+ * displaced by a large amount ("around the left edge of
+ * PATTERN"), while the code audit of the transform chain
+ * (CST816S -> input subsystem -> Zephyr pointer glue ->
+ * LVGL indev) found it nominally correct to within ~1 px.
+ * So this round measures instead of theorizing: an input
+ * callback on the touch device logs the RAW glass
+ * coordinates of every press, and every tap/button handler
+ * logs the LOGICAL point LVGL hands it. One RAW -> LOGICAL
+ * pair per tap localizes the error: a constant difference
+ * is a shift (with size and sign), a mirrored pair is a
+ * flip, exchanged axes a swap — and the same pair at
+ * 0 degrees is the control.
+ *
  * The production status screen is not modified: esb_nape_rx still
  * creates it, and this screen is simply loaded over it once the
  * display is up (its refresh timer keeps updating the covered
@@ -272,6 +288,8 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/input/input.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/logging/log.h>
 
 #include <lvgl.h>
@@ -346,6 +364,32 @@ static void scan_work_handler(struct k_work *work) {
 
 static K_WORK_DELAYABLE_DEFINE(scan_work, scan_work_handler);
 
+/* ---- Raw touch coordinate probe (v11.6) ----
+ *
+ * Logs the CST816S glass coordinates of every press, before
+ * the pointer glue's rotation transform ("RAW:"). The driver
+ * reports ABS_X, ABS_Y, then BTN_TOUCH=1 with sync per press
+ * frame, so latching the last ABS values and logging on the
+ * touch-down edge yields exactly one line per press.
+ * Read-only observation: the LVGL glue's own callback on the
+ * same device is unaffected. */
+static int32_t raw_press_x;
+static int32_t raw_press_y;
+
+static void raw_touch_input_cb(struct input_event *evt, void *user_data) {
+    ARG_UNUSED(user_data);
+
+    if (evt->type == INPUT_EV_ABS && evt->code == INPUT_ABS_X) {
+        raw_press_x = evt->value;
+    } else if (evt->type == INPUT_EV_ABS && evt->code == INPUT_ABS_Y) {
+        raw_press_y = evt->value;
+    } else if (evt->type == INPUT_EV_KEY && evt->code == INPUT_BTN_TOUCH && evt->value == 1) {
+        LOG_INF("RAW: x=%d y=%d type=press", raw_press_x, raw_press_y);
+    }
+}
+
+INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_NODELABEL(touch_sensor)), raw_touch_input_cb, NULL);
+
 /* ---- Screens (created once on the display work queue) ---- */
 
 static lv_obj_t *tap_scr;
@@ -383,6 +427,22 @@ static K_WORK_DEFINE(rotate_panel_work, rotate_panel_work_handler);
 static void rotate_frame_work_handler(struct k_work *work);
 static K_WORK_DEFINE(rotate_frame_work, rotate_frame_work_handler);
 
+/* v11.6: log the logical (post-transform) point LVGL is
+ * about to hand the handler, so each press produces a
+ * RAW -> LOGICAL pair with the RAW line above. */
+static void log_logical_point(void) {
+    lv_indev_t *indev = lv_indev_active();
+
+    if (indev == NULL) {
+        return;
+    }
+
+    lv_point_t point;
+
+    lv_indev_get_point(indev, &point);
+    LOG_INF("LOGICAL: x=%d y=%d", point.x, point.y);
+}
+
 static void rotate_btn_event_cb(lv_event_t *e) {
     LOG_INF("BTN: rotate");
 
@@ -390,6 +450,7 @@ static void rotate_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     LOG_INF("ROTATE: click, current rot_idx=%u (%d deg), queueing switch", rot_idx,
             rot_idx * 90);
 
@@ -414,6 +475,7 @@ static void tap_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     tap_count++;
     lv_label_set_text_fmt(tap_label, "TAP TEST: %u", tap_count);
     LOG_INF("TOUCHTEST tap #%u", tap_count);
@@ -426,6 +488,7 @@ static void pattern_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     cur_scr = 1;
     lv_scr_load(pattern_scr);
     LOG_INF("TOUCHTEST pattern screen loaded");
@@ -438,6 +501,7 @@ static void back_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     cur_scr = 0;
     lv_scr_load(tap_scr);
     LOG_INF("TOUCHTEST tap screen loaded");
@@ -450,6 +514,7 @@ static void next_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     cur_scr = 2;
     lv_scr_load(pattern2_scr);
     LOG_INF("TOUCHTEST pattern 2 screen loaded");
@@ -462,6 +527,7 @@ static void back2_btn_event_cb(lv_event_t *e) {
         return;
     }
 
+    log_logical_point();
     cur_scr = 1;
     lv_scr_load(pattern_scr);
     LOG_INF("TOUCHTEST pattern screen loaded");
