@@ -208,9 +208,18 @@ display_spi: &spi3 {
 };
 
 /* Second USB CDC ACM port for the Studio over ESB forwarder
- * (same setup as esb_test_rx; first CDC port is the log console). */
+ * (same setup as esb_test_rx; first CDC port is the log console).
+ * Third port: the Deck notification channel
+ * (deck-notifications-design.md). Its forwarder
+ * (esb_hid_notify_rx.c) is compiled only where
+ * CONFIG_ZMK_ESB_HID_NOTIFY_RX is set — the production Deck
+ * (disptest) build; this node alone just reserves the port. */
 &zephyr_udc0 {
 	esb_studio_cdc: esb_studio_cdc {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+
+	deck_notify_cdc: deck_notify_cdc {
 		compatible = "zephyr,cdc-acm-uart";
 	};
 };
