@@ -150,6 +150,7 @@ static uint8_t detail_slot;
 static int64_t register_done_ms;   /* when pairing DONE was first seen */
 static bool register_was_active;   /* pairing left IDLE on this page */
 static bool register_switched;     /* auto-switch to the new slot attempted */
+static bool register_from_boot;    /* session came from the boot window, not the detail page */
 static bool register_switch_ok;    /* auto-switch to the new slot succeeded */
 
 /* ---- Widgets ---- */
@@ -479,6 +480,7 @@ static void detail_register_cb(lv_event_t *e) {
     register_was_active = false;
     register_switched = false;
     register_switch_ok = false;
+    register_from_boot = false;
     esb_hid_pairing_open(detail_slot);
     show_page(PAGE_REGISTER);
 }
@@ -506,7 +508,8 @@ static void register_confirm_cb(lv_event_t *e) {
 static void register_cancel_cb(lv_event_t *e) {
     ARG_UNUSED(e);
     esb_hid_pairing_cancel();
-    show_page(PAGE_DETAIL);
+    show_page(register_from_boot ? PAGE_STATUS : PAGE_DETAIL);
+    register_from_boot = false;
 }
 
 /* ---- Name resolution for the STATUS hero ---- */
@@ -822,12 +825,14 @@ static void refresh_register_page(void) {
             /* Clear the DONE state. Land on STATUS now that the new
              * slot is active; if the switch failed, fall back to the
              * slot's detail page as before. */
-            enum deck_page dest = register_switch_ok ? PAGE_STATUS : PAGE_DETAIL;
+            enum deck_page dest =
+                (register_switch_ok || register_from_boot) ? PAGE_STATUS : PAGE_DETAIL;
 
             register_done_ms = 0;
             register_was_active = false;
             register_switched = false;
             register_switch_ok = false;
+            register_from_boot = false;
             esb_hid_pairing_cancel();
             show_page(dest);
         }
@@ -836,7 +841,8 @@ static void refresh_register_page(void) {
     default: /* IDLE: the window timed out while on this page */
         if (register_was_active) {
             register_was_active = false;
-            show_page(PAGE_DETAIL);
+            show_page(register_from_boot ? PAGE_STATUS : PAGE_DETAIL);
+            register_from_boot = false;
         } else {
             set_label_text_if_changed(register_status_label, "Searching...");
             style_button(register_confirm_btn, COL_LINE, COL_MUTE);
@@ -847,6 +853,25 @@ static void refresh_register_page(void) {
 
 static void refresh_cb(lv_timer_t *timer) {
     ARG_UNUSED(timer);
+
+    /* Boot pairing window: the module opened the window on its own at
+     * link-up. When a candidate appears and the register page is not
+     * already up, bring it up so the user can confirm with a tap
+     * (nothing is assigned before that tap: AUTO is off in this
+     * build). */
+    if (cur_page != PAGE_REGISTER) {
+        struct esb_hid_pairing_status ps;
+
+        if (esb_hid_pairing_get_status(&ps) == 0 && ps.state == ESB_HID_PAIRING_CANDIDATE) {
+            detail_slot = ps.target_slot;
+            register_done_ms = 0;
+            register_was_active = false;
+            register_switched = false;
+            register_switch_ok = false;
+            register_from_boot = true;
+            show_page(PAGE_REGISTER);
+        }
+    }
 
     refresh_status_page();
     switch (cur_page) {
