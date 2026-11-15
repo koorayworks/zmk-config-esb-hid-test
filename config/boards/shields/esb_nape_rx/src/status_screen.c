@@ -544,6 +544,46 @@ static const char *output_name(uint8_t output) {
     }
 }
 
+/* Battery text + gauge for the STATUS page. When the keyboard
+ * reports a split peer battery (status v4), show both halves as
+ * "L 85% R 62%" and drive the gauge from the lower of the two;
+ * otherwise the historical single-value rendering. The row percent
+ * label keeps showing the keyboard's own (left) battery only. */
+static void render_status_battery(uint8_t battery, uint8_t peer, bool lost) {
+    if (peer == 0xFF) {
+        if (battery == 0xFF) {
+            set_label_text_if_changed(batt_pct_label, "--%");
+            set_gauge_width_if_changed(batt_gauge_fg, 0);
+        } else {
+            set_label_text_fmt_if_changed(batt_pct_label, "%d%%", battery);
+            set_gauge_width_if_changed(batt_gauge_fg, 208 * battery / 100);
+            set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN,
+                                          lost ? COL_LOST_DOT
+                                               : (battery <= 20 ? COL_ALERT : 0xE8E8EA));
+        }
+        return;
+    }
+
+    char lbuf[8];
+    char rbuf[8];
+    char buf[24];
+
+    if (battery == 0xFF) {
+        snprintf(lbuf, sizeof(lbuf), "--%%");
+    } else {
+        snprintf(lbuf, sizeof(lbuf), "%d%%", battery);
+    }
+    snprintf(rbuf, sizeof(rbuf), "%d%%", peer);
+    snprintf(buf, sizeof(buf), "L %s R %s", lbuf, rbuf);
+    set_label_text_if_changed(batt_pct_label, buf);
+
+    uint8_t eff = (battery == 0xFF || peer < battery) ? peer : battery;
+
+    set_gauge_width_if_changed(batt_gauge_fg, 208 * eff / 100);
+    set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN,
+                                  lost ? COL_LOST_DOT : (eff <= 20 ? COL_ALERT : 0xE8E8EA));
+}
+
 /* ---- Refresh: STATUS page (the original rendering, now following
  *      the active slot instead of device 0) ---- */
 
@@ -604,14 +644,10 @@ static void refresh_status_page(void) {
 
         set_style_text_color_if_changed(batt_pct_label, LV_PART_MAIN, COL_LOST_MUTE);
         set_style_text_color_if_changed(row_pct_label, LV_PART_MAIN, COL_LOST_MUTE);
+        render_status_battery(st.battery, st.battery_peer, true);
         if (st.battery == 0xFF) {
-            set_label_text_if_changed(batt_pct_label, "--%");
-            set_gauge_width_if_changed(batt_gauge_fg, 0);
             set_label_text_if_changed(row_pct_label, "--%");
         } else {
-            set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
-            set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
-            set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN, COL_LOST_DOT);
             set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
         }
 
@@ -676,15 +712,10 @@ static void refresh_status_page(void) {
                                       i == layer ? lcol : COL_DOT_OFF);
     }
 
+    render_status_battery(st.battery, st.battery_peer, false);
     if (st.battery == 0xFF) {
-        set_label_text_if_changed(batt_pct_label, "--%");
-        set_gauge_width_if_changed(batt_gauge_fg, 0);
         set_label_text_if_changed(row_pct_label, "--%");
     } else {
-        set_label_text_fmt_if_changed(batt_pct_label, "%d%%", st.battery);
-        set_gauge_width_if_changed(batt_gauge_fg, 208 * st.battery / 100);
-        set_style_bg_color_if_changed(batt_gauge_fg, LV_PART_MAIN,
-                                      st.battery <= 20 ? COL_ALERT : 0xE8E8EA);
         set_label_text_fmt_if_changed(row_pct_label, "%d%%", st.battery);
     }
     set_label_text_if_changed(row_name_label, kb_name);
@@ -742,7 +773,15 @@ static void refresh_detail_page(void) {
 
     set_label_text_if_changed(detail_name_label, info.name[0] != '\0' ? info.name : "KEYBOARD");
     set_style_text_font_if_changed(detail_name_label, LV_PART_MAIN, FONT_28);
-    if (info.battery == 0xFF) {
+    if (info.battery_peer != 0xFF) {
+        if (info.battery == 0xFF) {
+            set_label_text_fmt_if_changed(detail_batt_label, "Battery L --%% R %d%%",
+                                          info.battery_peer);
+        } else {
+            set_label_text_fmt_if_changed(detail_batt_label, "Battery L %d%% R %d%%",
+                                          info.battery, info.battery_peer);
+        }
+    } else if (info.battery == 0xFF) {
         set_label_text_if_changed(detail_batt_label, "Battery --");
     } else {
         set_label_text_fmt_if_changed(detail_batt_label, "Battery %d%%", info.battery);
