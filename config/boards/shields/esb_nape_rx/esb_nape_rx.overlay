@@ -210,10 +210,14 @@ display_spi: &spi3 {
 /* Second USB CDC ACM port for the Studio over ESB forwarder
  * (same setup as esb_test_rx; first CDC port is the log console).
  * Third port: the Deck notification channel
- * (deck-notifications-design.md). Its forwarder
- * (esb_hid_notify_rx.c) is compiled only where
- * CONFIG_ZMK_ESB_HID_NOTIFY_RX is set — the production Deck
- * (disptest) build; this node alone just reserves the port. */
+ * (deck-notifications-design.md). The feature was cancelled on
+ * 2026-11-10 and the port was removed again on 2026-11-15: with
+ * three identical COM ports, ZMK Studio / MyKeebStudio cannot
+ * tell which one answers RPC, and the silent notify port made
+ * the Deck look broken. The node stays with status "disabled"
+ * (no device instance, no enumeration); to revive the channel,
+ * drop the status line here and re-enable
+ * CONFIG_ZMK_ESB_HID_NOTIFY_RX in the disptest conf. */
 &zephyr_udc0 {
 	esb_studio_cdc: esb_studio_cdc {
 		compatible = "zephyr,cdc-acm-uart";
@@ -221,5 +225,6 @@ display_spi: &spi3 {
 
 	deck_notify_cdc: deck_notify_cdc {
 		compatible = "zephyr,cdc-acm-uart";
+		status = "disabled";
 	};
 };
