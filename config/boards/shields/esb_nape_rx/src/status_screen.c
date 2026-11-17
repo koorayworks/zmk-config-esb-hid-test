@@ -601,7 +601,7 @@ static void refresh_usover_pill(void) {
     lv_obj_t *lbl = lv_obj_get_child(usover_btn, 0);
 
     if (lbl != NULL) {
-        set_label_text_if_changed(lbl, on ? "USOver ON" : "USOver OFF");
+        set_label_text_if_changed(lbl, on ? "US ON" : "US OFF");
         set_style_text_color_if_changed(lbl, LV_PART_MAIN, on ? 0x000000 : 0xFFFFFF);
     }
     set_style_bg_color_if_changed(usover_btn, LV_PART_MAIN, on ? COL_AMBER : COL_LINE);
@@ -1026,7 +1026,7 @@ static void build_status_page(lv_obj_t *page) {
     /* USOver toggle: US-layout keyboards on a JP-layout host OS.
      * Amber while on, neutral while off; the label is kept current
      * by refresh_usover_pill(). */
-    usover_btn = make_button(page, "USOver OFF", 128, 149, 96, 28, COL_LINE, 0xFFFFFF,
+    usover_btn = make_button(page, "US OFF", 128, 149, 96, 28, COL_LINE, 0xFFFFFF,
                              usover_cb, NULL);
 
     row_radio = lv_obj_create(page);
