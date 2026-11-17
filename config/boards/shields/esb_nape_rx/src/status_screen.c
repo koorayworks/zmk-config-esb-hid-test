@@ -170,6 +170,7 @@ static lv_obj_t *batt_gauge_fg;
 static lv_obj_t *row_radio;
 static lv_obj_t *row_name_label;
 static lv_obj_t *row_pct_label;
+static lv_obj_t *usover_btn;
 
 /* KEYBOARDS page */
 static lv_obj_t *slot_dot[ESB_HID_SLOT_COUNT];
@@ -587,7 +588,27 @@ static void render_status_battery(uint8_t battery, uint8_t peer, bool lost) {
 /* ---- Refresh: STATUS page (the original rendering, now following
  *      the active slot instead of device 0) ---- */
 
+static void refresh_usover_pill(void) {
+    static bool shown_valid;
+    static bool shown_on;
+    bool on = esb_hid_rx_usover_enabled();
+
+    if (usover_btn == NULL || (shown_valid && shown_on == on)) {
+        return;
+    }
+    shown_valid = true;
+    shown_on = on;
+    lv_obj_t *lbl = lv_obj_get_child(usover_btn, 0);
+
+    if (lbl != NULL) {
+        set_label_text_if_changed(lbl, on ? "USOver ON" : "USOver OFF");
+        set_style_text_color_if_changed(lbl, LV_PART_MAIN, on ? 0x000000 : 0xFFFFFF);
+    }
+    set_style_bg_color_if_changed(usover_btn, LV_PART_MAIN, on ? COL_AMBER : COL_LINE);
+}
+
 static void refresh_status_page(void) {
+    refresh_usover_pill();
     uint8_t active = esb_hid_rx_get_active_slot();
     struct esb_hid_device_status st;
     bool linked = esb_hid_get_device_status(active, &st) && st.valid;
@@ -943,6 +964,10 @@ static lv_obj_t *make_page(lv_obj_t *stage) {
     return page;
 }
 
+static void usover_cb(lv_event_t *e) {
+    esb_hid_rx_usover_set(!esb_hid_rx_usover_enabled());
+}
+
 static void build_status_page(lv_obj_t *page) {
     /* Top row: brand / own battery / link state. */
     lv_obj_t *brand = make_label(page, FONT_16, 0xE8E8EA, 16, 10);
@@ -997,6 +1022,12 @@ static void build_status_page(lv_obj_t *page) {
     lv_obj_t *sect = make_label(page, FONT_16, 0xE8E8EA, 16, 154);
     lv_label_set_text(sect, "KEYBOARDS");
     lv_obj_set_style_text_letter_space(sect, 3, LV_PART_MAIN);
+
+    /* USOver toggle: US-layout keyboards on a JP-layout host OS.
+     * Amber while on, neutral while off; the label is kept current
+     * by refresh_usover_pill(). */
+    usover_btn = make_button(page, "USOver OFF", 128, 149, 96, 28, COL_LINE, 0xFFFFFF,
+                             usover_cb, NULL);
 
     row_radio = lv_obj_create(page);
     lv_obj_set_size(row_radio, 9, 9);
