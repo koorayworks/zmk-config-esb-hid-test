@@ -3,31 +3,42 @@
  * XIAO nRF52840 Plus, PMW3610 trackball, 4 buttons, a
  * photointerrupter scroll ring and a MOSFET-gated LED.
  *
- * Pin assignment (provided by the board's collaborator 2026-11-18;
- * the schematic itself was not read):
+ * Pin assignment (provided by the board's collaborator 2026-11-18
+ * and verified against the EM7_XIAO_PCB schematic and PCB nets
+ * later the same day, with the board author's permission):
  *   PMW3610:  SCK=D18 (P1.05), SDIO=D8 (P1.13), CS=D9 (P1.14),
- *             MOTION=D10 (P1.15)
+ *             MOTION=D10 (P1.15), NRESET=D19 (P1.07)
  *   Buttons:  SW1=D7 (P1.12), SW2=D12 (P0.19), SW3=D17 (P1.03),
  *             SW4=D11 (P0.15)
  *   Ring:     PT5529B photointerrupter, A=D0 (P0.02), B=D1 (P0.03)
  *   LED:      D13 (P1.01) drives the gate (pin 1) of a DMG2302U
- *             N-channel MOSFET that switches the LED, active high.
+ *             N-channel MOSFET, active high. The MOSFET switches
+ *             the scroll ring's IR LED (BIR-NM13C1), so this output
+ *             must be on for the ring to work at all. The gate has
+ *             a 10k pull-down (off by default).
  *   No battery: USB powered.
  *
- * The Plus-only pins (D11/D12/D13/D17/D18) have no xiao_d nexus
- * entries, so they are referenced as raw &gpio0/&gpio1 pins. None of
- * them collide with the board's QSPI flash pins (P0.20..P0.25).
+ * The Plus-only pins (D11/D12/D13/D17/D18/D19) have no xiao_d
+ * nexus entries, so they are referenced as raw &gpio0/&gpio1 pins.
+ * None of them collide with the board's QSPI flash pins
+ * (P0.20..P0.25).
  *
- * Unverified assumptions for bring-up (check on hardware):
- * - Buttons are active-low to GND (internal pull-up used here).
- * - Ring phototransistor outputs are open-collector style
- *   (internal pull-up, active high decode like the gpio-qdec
- *   binding example). Scroll direction may need A/B swapped.
+ * Schematic-verified circuit facts:
+ * - Buttons switch to GND with no external pull resistors, so the
+ *   internal pull-up + active-low setup below is required.
+ * - MOTION has no external pull-up either; internal pull-up used.
+ * - NRESET is wired to D19 with no pull-up: it must be driven by
+ *   the driver (reset-gpios below), never left floating.
+ * - Ring PD_A/PD_B have external 10k pull-downs; the
+ *   phototransistor emitters rise with light (active high).
+ *
+ * Still unverified (check on hardware):
  * - SW1..SW4 order vs. the physical button positions on the EM7
- *   shell is unconfirmed; keymap defaults are SW1=LCLK, SW2=RCLK,
- *   SW3=MCLK, SW4=MB4.
- * - PMW3610 orientation/rotation is unconfirmed; the listener in
- *   the keymap applies no transform yet.
+ *   shell; keymap defaults are SW1=LCLK, SW2=RCLK, SW3=MCLK,
+ *   SW4=MB4.
+ * - Scroll direction (may need A/B swapped) and PMW3610
+ *   orientation/rotation; the listener in the keymap applies no
+ *   transform yet.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -86,11 +97,14 @@
     };
 
     /* Scroll ring: PT5529B photointerrupter quadrature -> wheel.
-     * One full A/B cycle (4 transitions) per slot = 1 wheel step. */
+     * One full A/B cycle (4 transitions) per slot = 1 wheel step.
+     * The board fits 10k pull-downs on PD_A/PD_B and the
+     * phototransistor emitters go high with light, so no internal
+     * pull is wanted here (a pull-up would fight the pull-downs). */
     ring_qdec: ring_qdec {
         compatible = "gpio-qdec";
-        gpios = <&gpio0 2 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>,
-                <&gpio0 3 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>;
+        gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>,
+                <&gpio0 3 GPIO_ACTIVE_HIGH>;
         steps-per-period = <4>;
         zephyr,axis = <INPUT_REL_WHEEL>;
         sample-time-us = <2000>;
@@ -133,6 +147,7 @@
         reg = <0>;
         spi-max-frequency = <2000000>;
         motion-gpios = <&gpio1 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        reset-gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
         res-cpi = <800>;
         zephyr,axis-x = <INPUT_REL_X>;
         zephyr,axis-y = <INPUT_REL_Y>;
