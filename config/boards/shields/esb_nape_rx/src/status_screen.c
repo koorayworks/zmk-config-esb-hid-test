@@ -1021,12 +1021,14 @@ static void build_status_page(lv_obj_t *page) {
 
     lv_obj_t *sect = make_label(page, FONT_16, 0xE8E8EA, 16, 154);
     lv_label_set_text(sect, "KEYBOARDS");
-    lv_obj_set_style_text_letter_space(sect, 3, LV_PART_MAIN);
+    /* Letter space 1, not 3: at 3 the header runs to ~x=139 and
+     * slides under the USOver pill at x=134. */
+    lv_obj_set_style_text_letter_space(sect, 1, LV_PART_MAIN);
 
     /* USOver toggle: US-layout keyboards on a JP-layout host OS.
      * Amber while on, neutral while off; the label is kept current
      * by refresh_usover_pill(). */
-    usover_btn = make_button(page, "US OFF", 128, 149, 96, 28, COL_LINE, 0xFFFFFF,
+    usover_btn = make_button(page, "US OFF", 134, 149, 90, 28, COL_LINE, 0xFFFFFF,
                              usover_cb, NULL);
 
     row_radio = lv_obj_create(page);
