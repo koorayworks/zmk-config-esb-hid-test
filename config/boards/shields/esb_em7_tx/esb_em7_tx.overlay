@@ -151,7 +151,11 @@
         status = "okay";
         compatible = "pixart,pmw3610";
         reg = <0>;
-        spi-max-frequency = <2000000>;
+        /* Datasheet max is 2 MHz, but SCK sits on P1.05, a
+         * low-frequency-only pin: run 1 MHz for edge margin.
+         * The sensor accumulates deltas internally, so the
+         * slower clock costs no tracking performance. */
+        spi-max-frequency = <1000000>;
         motion-gpios = <&gpio1 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
         reset-gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
         res-cpi = <800>;
