@@ -40,7 +40,7 @@
     chosen {
         zmk,kscan = <&kscan0>;
         zmk,physical-layout = <&em7_layout>;
-        zmk,ext-power = <&ext_power>;
+        zmk,ext-power = <&ext_power_led>;
     };
 
     kscan0: kscan {
@@ -80,7 +80,7 @@
 
     /* D13 -> DMG2302U gate: on while the device is awake, so the
      * LED behind the MOSFET is powered. Toggle with &ext_power. */
-    ext_power: ext_power {
+    ext_power_led: ext_power {
         compatible = "zmk,ext-power-generic";
         control-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
     };
