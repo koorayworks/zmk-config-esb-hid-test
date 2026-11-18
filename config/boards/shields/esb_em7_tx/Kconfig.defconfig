@@ -1,0 +1,6 @@
+if SHIELD_ESB_EM7_TX
+
+config ZMK_KEYBOARD_NAME
+	default "EM7"
+
+endif

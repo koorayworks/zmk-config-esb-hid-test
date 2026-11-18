@@ -1,0 +1,60 @@
+/*
+ * EM7 keymap: a mouse, modeled as 4 direct-GPIO positions.
+ *
+ * Layer 0: the four buttons as mouse buttons.
+ *   SW1=LCLK, SW2=RCLK, SW3=MCLK, SW4=MB4
+ *   (SW order vs. physical positions is unconfirmed; remap here
+ *   or in Studio once checked on the real shell.)
+ *
+ * Layer 1 (system): hold SW1+SW2 together (combo) to reach it.
+ *   SW1=bootloader, SW2=LED (ext-power) toggle, SW3=reset,
+ *   SW4=reserved for step 2 (&out OUT_TOG once ESB/BLE land).
+ *
+ * Ball and scroll ring are plain pass-through listeners for now;
+ * rotation / invert / scaling get tuned after the hardware check.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/pointing.h>
+#include <dt-bindings/zmk/ext_power.h>
+
+/ {
+    trackball_listener: trackball_listener {
+        compatible = "zmk,input-listener";
+        device = <&trackball>;
+    };
+
+    wheel_listener: wheel_listener {
+        compatible = "zmk,input-listener";
+        device = <&ring_qdec>;
+    };
+
+    combos {
+        compatible = "zmk,combos";
+
+        combo_sys {
+            timeout-ms = <50>;
+            key-positions = <0 1>;
+            bindings = <&mo 1>;
+        };
+    };
+
+    keymap {
+        compatible = "zmk,keymap";
+
+        layer_0 {
+            bindings = <
+                &mkp LCLK  &mkp RCLK  &mkp MCLK  &mkp MB4
+            >;
+        };
+
+        layer_1 {
+            bindings = <
+                &bootloader  &ext_power EP_TOG  &sys_reset  &trans
+            >;
+        };
+    };
+};
