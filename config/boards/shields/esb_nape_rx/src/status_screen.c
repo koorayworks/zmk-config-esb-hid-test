@@ -1028,7 +1028,7 @@ static void build_status_page(lv_obj_t *page) {
     /* USOver toggle: US-layout keyboards on a JP-layout host OS.
      * Amber while on, neutral while off; the label is kept current
      * by refresh_usover_pill(). */
-    usover_btn = make_button(page, "US OFF", 134, 149, 90, 28, COL_LINE, 0xFFFFFF,
+    usover_btn = make_button(page, "US OFF", 135, 150, 88, 26, COL_LINE, 0xFFFFFF,
                              usover_cb, NULL);
 
     row_radio = lv_obj_create(page);
