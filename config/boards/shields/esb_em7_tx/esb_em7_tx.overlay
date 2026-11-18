@@ -114,6 +114,12 @@
 
 &xiao_serial { status = "disabled"; };
 
+/* The board dtsi leaves &spi2 (xiao_spi) enabled with pinctrl
+ * claiming P1.13/P1.14/P1.15, the same pins spi0 uses for the
+ * sensor below. Nothing in this build talks to spi2, so disable
+ * it instead of relying on init order to sort out the pin mux. */
+&spi2 { status = "disabled"; };
+
 &pinctrl {
     spi0_default: spi0_default {
         group1 {
